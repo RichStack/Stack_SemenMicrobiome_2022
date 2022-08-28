@@ -4,3 +4,5 @@ Developed over a series of Code Club episodes led by Pat Schloss to answer an im
 and develop comfort using tolls to develop reproducible research practices.
 
 Author: Richard Stack
+
+Dependencies: Mothur version 1.48.0
