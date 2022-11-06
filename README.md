@@ -5,4 +5,11 @@ Author: Richard Stack
 Developed over a series of Code Club episodes led by Pat Schloss to answer an important question in microbiology
 and develop comfort using tolls to develop reproducible research practices.
 
+<<<<<<< HEAD
 Dependencies: Mothur version 1.48.0
+=======
+Author: Richard Stack
+
+Dependencies: 
+Mothur version 1.48.0
+>>>>>>> master
