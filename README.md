@@ -5,4 +5,5 @@ and develop comfort using tolls to develop reproducible research practices.
 
 Author: Richard Stack
 
-Dependencies: Mothur version 1.48.0
+Dependencies: 
+Mothur version 1.48.0
