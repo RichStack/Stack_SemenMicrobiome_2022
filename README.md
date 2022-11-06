@@ -1,15 +1,11 @@
-Code Club Project: Assessing whether intra and inter-genomic variation hinder utility of ASVs.
+## Code Club Project: Assessing whether intra and inter-genomic variation hinder utility of ASVs.
 
-Author: Richard Stack
+**Author:** Richard Stack
 
 Developed over a series of Code Club episodes led by Pat Schloss to answer an important question in microbiology
 and develop comfort using tolls to develop reproducible research practices.
 
-<<<<<<< HEAD
-Dependencies: Mothur version 1.48.0
-=======
-Author: Richard Stack
+#### Dependencies:
+* [Mothur version 1.48.0](https://github.com/mothur/mothur/releases/tag/v1.48.0)
 
-Dependencies: 
-Mothur version 1.48.0
->>>>>>> master
+I will write my documents in ~~Microsoft Word~~ markdown.
