@@ -1,11 +1,31 @@
-## Code Club Project: Assessing whether intra and inter-genomic variation hinder utility of ASVs.
+# Low-biomass 16S amplicon workflow (QIIME2 → R)
 
-**Author:** Richard Stack
+This repository contains an R-based downstream analysis workflow
+for low-microbial biomass 16S rRNA amplicon data.
 
-Developed over a series of Code Club episodes led by Pat Schloss to answer an important question in microbiology
-and develop comfort using tolls to develop reproducible research practices.
+## Input requirements
+- QIIME2 feature table (`table.qza`)
+- Rooted phylogenetic tree
+- Taxonomy assignments (SILVA and/or Greengenes)
+- Sample metadata (TSV)
 
-#### Dependencies:
-* [Mothur version 1.48.0](https://github.com/mothur/mothur/releases/tag/v1.48.0)
+## Assumptions
+- Data processed with QIIME2 2024+
+- DADA2 denoising
+- Paired-end Illumina reads
+- Low-biomass samples with negative controls
 
-I will write my documents in ~~Microsoft Word~~ markdown.
+## Quick start
+1. Clone repository
+2. Copy `config/config_example.R` → `config/config.R`
+3. Edit paths
+4. Run `analysis/main_analysis.R`
+   
+## Acknowledgements
+
+This workflow draws on ideas and code patterns from:
+- Callahan et al. DADA2
+- Davis et al. decontam
+- F1000Research microbiome analysis guidelines
+
+Any mistakes or adaptations are my own.
