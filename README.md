@@ -93,7 +93,7 @@ output/
   README.md            # Analysis outputs are written here
 
 ---
-   
+md
 ## How to run
 
 Clone the repository
@@ -122,3 +122,4 @@ F1000Research microbiome analysis guidelines
 QIIME2 documentation and tutorials
 
 Any adaptations, errors, or interpretations are my own.
+yaml
