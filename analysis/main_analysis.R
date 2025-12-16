@@ -131,6 +131,7 @@ length(get_taxa_unique(physeq, "Genus"))
 
 # Subset to bacteria only
 bac_physeq=subset_taxa(physeq, Kingdom=="Bacteria")
+
 # Examine the raw counts in the bacteria only phyloseq object
 nb_samples <- dim(bac_physeq@otu_table)[2] # nb of cols, here samples
 nb_samples
@@ -149,8 +150,7 @@ asv_renaming <- setNames(new_asv_names, asv_names)
 taxa_names(bac_physeq) <- asv_renaming
 Taxonomy <- data.frame(tax_table(bac_physeq))
 
-#remove singletons (there shouldn't be any from dada2; 
-# but it is worth checking 
+# Remove singletons (there shouldn't be any from dada2 but it is worth checking) 
 physeq2 <- prune_taxa(taxa_sums(bac_physeq) > 1, bac_physeq)
 physeq2 <- prune_samples(sample_sums(bac_physeq) > 0, bac_physeq)
 bac_physeq
@@ -170,9 +170,7 @@ ggplot(data = Metadata, aes(x=reorder(sampleid, mapped_boar), y=mapped_boar)) +
        x = "Samples",
        y = "Reads mapped (%)",
        colour = "Sample Type") +
-  scale_colour_igv(labels = c("Boar Swab", "Extender", "Glove Swab",
-                                   "Negative Control", "Positive Control",
-                                   "Boar Semen")) +
+  scale_colour_igv() +
   theme_bw(base_size = 10) +
   theme(text = element_text(size = 10),
         plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
@@ -181,8 +179,8 @@ ggplot(data = Metadata, aes(x=reorder(sampleid, mapped_boar), y=mapped_boar)) +
         axis.text.x = element_blank(),
         plot.title = element_text(size = 14, face = "bold"),
         plot.subtitle = element_text(size = 10))
-ggsave("Mapped_to_boar.png",width = 7, height = 5, dpi = 300)
-ggsave("Mapped_to_boar.pdf",width = 7, height = 5, units = "in")
+ggsave("Mapped_to_boar.png")
+ggsave("Mapped_to_boar.pdf")
 
 ###################################################################
 #
