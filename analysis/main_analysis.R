@@ -42,6 +42,13 @@ rm(list = ls())
 ########################################################################
 # Load configuration
 source("config/config.R")
+# Check all expected files are in place
+stopifnot(
+  file.exists(feature_table_qza),
+  file.exists(tree_qza),
+  file.exists(metadata_tsv),
+  file.exists(taxonomy_qza)
+)
 ########################################################################
 # Read in the necessary packages
 library(tidyverse)
