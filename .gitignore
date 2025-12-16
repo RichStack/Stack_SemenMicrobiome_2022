@@ -1,2 +1,24 @@
-data/
-code/mothur/
+# ----------------------------
+# User-specific config files
+# ----------------------------
+config/config.R
+
+# ----------------------------
+# Data files
+# ----------------------------
+data/*
+!data/README.md
+
+# ----------------------------
+# Output files
+# ----------------------------
+output/*
+!output/README.md
+
+# ----------------------------
+# R session / OS noise
+# ----------------------------
+.Rhistory
+.RData
+.Rproj.user
+.DS_Store
