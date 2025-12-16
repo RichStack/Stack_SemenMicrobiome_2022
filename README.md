@@ -91,9 +91,9 @@ data/
 
 output/
   README.md            # Analysis outputs are written here
-
+```
 ---
-md
+
 ## How to run
 
 Clone the repository
@@ -103,6 +103,8 @@ Run the analysis script:
 
 source("analysis/main_analysis.R")
 
+---
+
 ## Notes and limitations
 
 This workflow was developed for low-biomass 16S datasets
@@ -110,6 +112,8 @@ Some filtering steps and mock-based thresholds are dataset-specific
 Sections of the script are clearly marked where manual intervention
 or adaptation may be required
 Users are encouraged to read the script comments carefully before reuse.
+
+---
 
 ## Acknowledgements
 
