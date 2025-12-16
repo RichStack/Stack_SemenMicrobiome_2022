@@ -1,4 +1,8 @@
 #####################
+# 
+#  Notes on the origin of this script
+#
+#####################
 # This script has been adapted from a script written to handle 16S rRNA amplicon data (V3-V4 region).
 # Original sample type: boar semen - but could be used for any low-microbial biomass type sample data.
 #
@@ -8,34 +12,34 @@
 # I recommend the use of at least one negative control, and preferably more - e.g.: PBS, water, etc.
 # Finally there are several mocks.
 # 1 Mock is a logarithmic DNA standard from zymoBIOMICS.
-# 2 repeats of zymoBIOMICS mock ontaining equal ratios of 8 organisms.
+# 2 repeats of zymoBIOMICS mock containing equal ratios of 8 organisms.
 # A cell based mock created by me, in 3 dilutions.
 # Undiluted contains approx 10^8 cells. Then dilutions equal to: 10^5 and 10^3 cells.
 # You could also use commercial cell-based mocks.
 # 
 # Additional controls that could be included, but are not present in the workflow are
-# spike-in controls - these are used estimate quantification.
+# spike-in controls - these are used to estimate absolute microbial quantity.
 ####################################################################
-
+#
+# Original pre-processing steps
+#
+####################################################################
 # Proceeding this script, a shell-script preprocessing Qiime2 workflow was used to: 
-# trim primers and adapters with the cutadapt plugin.
+# Trim primers and adapters with the cutadapt plugin.
 # 
 # Additionally, as this original run contained a high degree of off target amplification,
 # Bowtie2 was used to align and remove sequences that mapped against boar genome. 
 # Some samples now had ++ low sequencing depth and the script include steps to assess depth.
-
-# The Qiime2-2024 amplicon workflow was then used for:
+#
+# The Qiime2-2024 amplicon workflow was then used to:
 # Create a demultiplexed qza object containing read pairs.
 # Truncate reads at 280f and 220r and denoise using the dada2 algorithm
-# (Most reads were lost at quality filter, which is normal for Illumina data.)
-# (Most reads were retained at merging and chimeric filter - all good signs.)
+# (Most of my reads were lost at quality filter, which is normal for Illumina data.)
+# (Most of my reads were retained at merging and chimeric filter - all good signs.)
 # Create a feature table and representative sequences again with dada2
 # Create a phylogenetic tree using the mafft-tree method after first aligning all sequences
 # Perform Taxonomic assignment using sklearn and pre-trained naive-bayesian classifiers.
-# I used both a Greengenes latest 2024.09, which gave slightly more species level annotation
-# And a full length SILVA 138.2 classifier.
-# However in my dataset Greengenes was not able to classify Escherchia below kingdom (Bacteria)
-# Therefore both taxonomies were been imported and the first task is to compare and annotate a taxonomy based on these.
+# I used a full length SILVA 138.2 classifier, but other options are available.
 #########################################################################
 # this clears the global environment
 rm(list = ls())
@@ -74,9 +78,7 @@ library(ggVennDiagram)
 library(ggpubr)
 library(pheatmap)
 #######################################################################
-#
-# Read in the data from qiime
-#
+SECTION 1: Import QIIME2 data and create phyloseq object
 ########################################################################
 
 # Read the qiime feature table into R
@@ -160,8 +162,8 @@ sampletype_labeller <- as_labeller(c("Boar swab", "Extender", "Glove swab",
                          "Boar semen"))
 
 # Here- plotting percentage of reads mapped to boar genome - as this was an issue in the data
-# May not be necessary for your data.
-ggplot(data = Metadata,aes(x=reorder(sampleid, mapped_boar), y=mapped_boar)) +
+# This may not be necessary for your data.
+ggplot(data = Metadata, aes(x=reorder(sampleid, mapped_boar), y=mapped_boar)) +
   geom_point(aes(colour = sampletype, shape = Tapestation), size =3, alpha = 1) +
   labs(title = "Percentage of reads mapped to boar genome",
        subtitle = "Samples with multiplepeaks observed on tapestation assays are correlated with off- target amplification",
