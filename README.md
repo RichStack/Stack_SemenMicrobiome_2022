@@ -92,12 +92,33 @@ data/
 output/
   README.md            # Analysis outputs are written here
 
+---
    
+## How to run
+
+Clone the repository
+Copy config/config_example.R to config/config.R
+Edit file paths and dataset-specific parameters
+Run the analysis script:
+
+source("analysis/main_analysis.R")
+
+## Notes and limitations
+
+This workflow was developed for low-biomass 16S datasets
+Some filtering steps and mock-based thresholds are dataset-specific
+Sections of the script are clearly marked where manual intervention
+or adaptation may be required
+Users are encouraged to read the script comments carefully before reuse.
+
 ## Acknowledgements
 
-This workflow draws on ideas and code patterns from:
-- Callahan et al. DADA2
-- Davis et al. decontam
-- F1000Research microbiome analysis guidelines
+This workflow draws on methods, ideas, and code patterns from multiple
+sources, including but not limited to:
 
-Any mistakes or adaptations are my own.
+Callahan et al. (DADA2)
+Davis et al. (decontam)
+F1000Research microbiome analysis guidelines
+QIIME2 documentation and tutorials
+
+Any adaptations, errors, or interpretations are my own.
