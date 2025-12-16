@@ -1,5 +1,4 @@
 #####################
-#\
 # This script has been adapted from a script written to handle 16S rRNA amplicon data (V3-V4 region).
 # Original sample type: boar semen - but could be used for any low-microbial biomass type sample data.
 #
@@ -41,6 +40,9 @@
 # this clears the global environment
 rm(list = ls())
 ########################################################################
+# Load configuration
+source("config/config.R")
+########################################################################
 # Read in the necessary packages
 library(tidyverse)
 library(qiime2R)
@@ -70,76 +72,35 @@ library(pheatmap)
 #
 ########################################################################
 
-path.in <- "~/PhD-worklaptop/RProjects/Genus_amplicon"
 # Read the qiime feature table into R
-ASVs <- read_qza("~/PhD-worklaptop/RProjects/Genus_amplicon/table.qza")
+ASVs <- read_qza(feature_table_qza)
 # Read the metadata file into R, ignore the filepaths to fastq files.
-Metadata <- readr::read_tsv("~/PhD-worklaptop/Genus/Genus_data_host_cleaned_merged.tsv")
+Metadata <- readr::read_tsv(metadata_tsv)
 
-# 
 # Read the qiime taxonomy files into R
-Silva_Taxonomy <- read_qza("~/PhD-worklaptop/RProjects/Genus_amplicon/silva_taxonomy.qza")
-GG_Taxonomy <- read_qza("~/PhD-worklaptop/RProjects/Genus_amplicon/greengenes_taxonomy.qza")
+Taxonomy <- read_qza(taxonomy_qza)
+
 # Parse the taxonomy string in this file to make it more manageable
-Silva_Taxonomy <- parse_taxonomy(Silva_Taxonomy$data)
-GG_Taxonomy <- parse_taxonomy(GG_Taxonomy$data)
+Taxonomy <- parse_taxonomy(Taxonomy$data)
+
 # Remove the d__ prefix from the Kingdom data
-Silva_Taxonomy$Kingdom <- sub('^d__', '', Silva_Taxonomy$Kingdom)
-GG_Taxonomy$Kingdom <- sub('^d__', '', GG_Taxonomy$Kingdom)
-Tree <- read_qza("~/PhD-worklaptop/RProjects/Genus_amplicon/rooted-tree.qza")
+Taxonomy$Kingdom <- sub('^d__', '', Taxonomy$Kingdom)
 
-# Merge taxonomy tables by ASV (row.names), keeping all entries
-taxonomy_merged <- merge(
-  Silva_Taxonomy, GG_Taxonomy,
-  by = "row.names", all = TRUE,
-  suffixes = c("_silva", "_gg")
-)
-
-# Restore rownames and clean up
-rownames(taxonomy_merged) <- taxonomy_merged$Row.names
-taxonomy_merged$Row.names <- NULL
-
-# Make a curated species column by selecting those ASVs 
-# where GG and SILVA are in agreement
-taxonomy_merged$curated_species <- ifelse(
-  !is.na(taxonomy_merged$Genus_gg) & 
-  !is.na(taxonomy_merged$Genus_silva) & 
-  taxonomy_merged$Genus_gg == taxonomy_merged$Genus_silva & 
-  !is.na(taxonomy_merged$Species_gg) & 
-  taxonomy_merged$Species_gg != "",
-  taxonomy_merged$Species_gg,
-  taxonomy_merged$Species_silva
-)
-# Create a dataframe to review the proposed changes
-species_changes <- taxonomy_merged |>
-  tibble::rownames_to_column("ASV_ID") |>
-  select(ASV_ID, Genus_silva, Genus_gg, Species_silva, Species_gg, curated_species) |>
-  filter(curated_species != Species_silva | (is.na(curated_species) != is.na(Species_silva)))
-# Update species classification for Providencia and Enterococcus as these appears in mock.
-# Example given here - change the genus name to match your samples
-## taxonomy_merged[grep("Providencia", taxonomy_merged$Genus_gg), ]
-## taxonomy_merged[grep("Enterococcus", taxonomy_merged$Genus_gg), ]
-
-# Manually add the taxa number below
-## taxonomy_merged["85be4a7478c6d348543f00ec9a7132b6","curated_species"] <- "Providencia stuartii"
-## taxonomy_merged["9084df83181fcb6fed6d2109ee9c4a02","curated_species"] <- "Providencia stuartii"
-## taxonomy_merged["892a20bbdc3ce599dc0c5d9f0866c352","curated_species"] <- "Enterococcus faecalis"
-## taxonomy_merged["d1d3108a916074ebc37adc91b17be10e","curated_species"] <- "Enterococcus faecalis"
-## taxonomy_merged["9f4cfdaa10ec68cbe85261ecf7b3ccd6","curated_species"] <- "Enterococcus faecalis"
+Tree <- read_qza(tree_qza)
 
 # Create your final Taxonomy dataframe
 Taxonomy <- taxonomy_merged |>
   tibble::rownames_to_column("ASV_ID") |>
-  select(ASV_ID, Kingdom_silva, Phylum_silva, Class_silva, Order_silva, Family_silva, Genus_silva, curated_species)
+  select(ASV_ID, Kingdom, Phylum, Class, Order, Family, Genus, Species)
 rownames(Taxonomy) <- Taxonomy$ASV_ID
 Taxonomy$ASV_ID <- NULL
 colnames(Taxonomy) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
 # Create a phyloseq object from the imported qiime data
 
 physeq <- qza_to_phyloseq(
-  features = "~/PhD-worklaptop/RProjects/Genus_amplicon/table.qza",
-  tree = "~/PhD-worklaptop/RProjects/Genus_amplicon/rooted-tree.qza",
-  metadata = "~/PhD-worklaptop/Genus/Genus_data_host_cleaned_merged.tsv")
+  features = feature_table_qza,
+  tree = rooted-tree.qza,
+  metadata = metadata.tsv)
 # Convert Taxonomy dataframe into a matrix for import
 Taxonomy <- as.matrix(Taxonomy) 
 TAX=tax_table(Taxonomy)
@@ -155,8 +116,10 @@ nb_samples
 nb_features <- dim(physeq@otu_table)[1] # number of rows, here variables (OTU)
 nb_features 
 sample_sums(physeq) 
+
 # Count of genera
 length(get_taxa_unique(physeq, "Genus"))
+
 # Subset to bacteria only
 bac_physeq=subset_taxa(physeq, Kingdom=="Bacteria")
 # Examine the raw counts in the bacteria only phyloseq object
@@ -177,12 +140,12 @@ asv_renaming <- setNames(new_asv_names, asv_names)
 taxa_names(bac_physeq) <- asv_renaming
 Taxonomy <- data.frame(tax_table(bac_physeq))
 
-#remove singletons (there shouldn't be any from deblur; 
+#remove singletons (there shouldn't be any from dada2; 
 # but it is worth checking 
 physeq2 <- prune_taxa(taxa_sums(bac_physeq) > 1, bac_physeq)
 physeq2 <- prune_samples(sample_sums(bac_physeq) > 0, bac_physeq)
 bac_physeq
-physeq2 # this confirms no singletons were present
+physeq2 # this should confirm that no singletons were present
 
 # Simple function to label sample types - change variables to match your data
 sampletype_labeller <- as_labeller(c("Boar swab", "Extender", "Glove swab",
