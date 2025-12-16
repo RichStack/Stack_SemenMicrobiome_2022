@@ -78,7 +78,7 @@ library(ggVennDiagram)
 library(ggpubr)
 library(pheatmap)
 #######################################################################
-SECTION 1: Import QIIME2 data and create phyloseq object
+# SECTION 1: Import QIIME2 data and create phyloseq object
 ########################################################################
 
 # Read the qiime feature table into R
@@ -95,36 +95,35 @@ Taxonomy <- parse_taxonomy(Taxonomy$data)
 # Remove the d__ prefix from the Kingdom data
 Taxonomy$Kingdom <- sub('^d__', '', Taxonomy$Kingdom)
 
+# Read the tree file into R
 Tree <- read_qza(tree_qza)
 
 # Create your final Taxonomy dataframe
-Taxonomy <- taxonomy_merged |>
+Taxonomy <- Taxonomy |>
   tibble::rownames_to_column("ASV_ID") |>
   select(ASV_ID, Kingdom, Phylum, Class, Order, Family, Genus, Species)
 rownames(Taxonomy) <- Taxonomy$ASV_ID
 Taxonomy$ASV_ID <- NULL
 colnames(Taxonomy) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
-# Create a phyloseq object from the imported qiime data
 
+# Import into phyloseq
 physeq <- qza_to_phyloseq(
   features = feature_table_qza,
-  tree = rooted-tree.qza,
-  metadata = metadata.tsv)
-# Convert Taxonomy dataframe into a matrix for import
-Taxonomy <- as.matrix(Taxonomy) 
-TAX=tax_table(Taxonomy)
-# Merge updated Tax table with the phyloseq object
-physeq=merge_phyloseq(physeq, TAX)
-# Check data format
-view(physeq@tax_table)
-view(physeq@otu_table)
+  tree = tree_qza,
+  metadata = metadata_tsv
+)
 
-# Examine the raw counts in the original phyloseq object
-nb_samples <- dim(physeq@otu_table)[2] # nb of cols, here samples
-nb_samples
-nb_features <- dim(physeq@otu_table)[1] # number of rows, here variables (OTU)
-nb_features 
-sample_sums(physeq) 
+# Replace taxonomy table
+TAX <- tax_table(as.matrix(Taxonomy))
+physeq <- merge_phyloseq(physeq, TAX)
+
+# Basic sanity checks
+cat("Samples:", nsamples(physeq), "\n")
+cat("ASVs:", ntaxa(physeq), "\n")
+
+# Check data format
+tax_table(physeq)[1:5, ]
+otu_table(physeq)[1:5, 1:5]
 
 # Count of genera
 length(get_taxa_unique(physeq, "Genus"))
@@ -132,12 +131,7 @@ length(get_taxa_unique(physeq, "Genus"))
 # Subset to bacteria only
 bac_physeq=subset_taxa(physeq, Kingdom=="Bacteria")
 
-# Examine the raw counts in the bacteria only phyloseq object
-nb_samples <- dim(bac_physeq@otu_table)[2] # nb of cols, here samples
-nb_samples
-nb_features <- dim(bac_physeq@otu_table)[1] # number of rows, here variables (OTU)
-nb_features 
-length(get_taxa_unique(bac_physeq, "Genus"))
+cat("Bacterial ASVs:", ntaxa(bac_physeq), "\n")
 
 # Change ASV names to simpler naming convention
 # Get current ASV names
@@ -153,34 +147,9 @@ Taxonomy <- data.frame(tax_table(bac_physeq))
 # Remove singletons (there shouldn't be any from dada2 but it is worth checking) 
 physeq2 <- prune_taxa(taxa_sums(bac_physeq) > 1, bac_physeq)
 physeq2 <- prune_samples(sample_sums(bac_physeq) > 0, bac_physeq)
-bac_physeq
-physeq2 # this should confirm that no singletons were present
 
-# Simple function to label sample types - change variables to match your data
-sampletype_labeller <- as_labeller(c("Boar swab", "Extender", "Glove swab",
-                         "Negative control", "Positive control",
-                         "Boar semen"))
-
-# Here- plotting percentage of reads mapped to boar genome - as this was an issue in the data
-# This may not be necessary for your data.
-ggplot(data = Metadata, aes(x=reorder(sampleid, mapped_boar), y=mapped_boar)) +
-  geom_point(aes(colour = sampletype, shape = Tapestation), size =3, alpha = 1) +
-  labs(title = "Percentage of reads mapped to boar genome",
-       subtitle = "Samples with multiplepeaks observed on tapestation assays are correlated with off- target amplification",
-       x = "Samples",
-       y = "Reads mapped (%)",
-       colour = "Sample Type") +
-  scale_colour_igv() +
-  theme_bw(base_size = 10) +
-  theme(text = element_text(size = 10),
-        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
-        legend.background = element_blank(),
-        legend.box.background = element_rect(colour = "black"),
-        axis.text.x = element_blank(),
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 10))
-ggsave("Mapped_to_boar.png")
-ggsave("Mapped_to_boar.pdf")
+# Confirm no singletons
+cat("ASVs after singleton removal:", ntaxa(physeq2), "\n")
 
 ###################################################################
 #
