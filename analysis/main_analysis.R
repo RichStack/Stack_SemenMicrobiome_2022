@@ -150,11 +150,16 @@ physeq2 <- prune_samples(sample_sums(bac_physeq) > 0, bac_physeq)
 
 # Confirm no singletons
 cat("ASVs after singleton removal:", ntaxa(physeq2), "\n")
-
+# Now revert to the bac_physeq object
+bac_physeq <- physeq2
+rm(physeq2)
 ###################################################################
-# SECTION 2: Initial quality control
+# SECTION 2: Initial quality control and prevalence diagnostics
 ####################################################################
-# Before we look at negative controls - we do some light filtering
+# NOTE: No prevalence-based filtering is applied by default in this section.
+# This section is intended for exploratory QC and informed decision-making.
+
+# Before we look at negative controls in section 3 - we do some light filtering
 # Remove chloroplasts and mitochondria in one command
 ps_filt <- subset_taxa(
   bac_physeq,
