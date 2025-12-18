@@ -152,11 +152,9 @@ physeq2 <- prune_samples(sample_sums(bac_physeq) > 0, bac_physeq)
 cat("ASVs after singleton removal:", ntaxa(physeq2), "\n")
 
 ###################################################################
-#
-# Section 2: Initial quality control
-#
+# SECTION 2: Initial quality control
 ####################################################################
-# Before we look at negative controls - do some light filtering
+# Before we look at negative controls - we do some light filtering
 # Remove chloroplasts and mitochondria in one command
 ps_filt <- subset_taxa(
   bac_physeq,
@@ -167,59 +165,61 @@ ps_filt <- subset_taxa(
 
 # This part of the code is taken from the phyloseq f1000 workflow
 # https://bioconductor.org/help/course-materials/2017/BioC2017/Day1/Workshops/Microbiome/MicrobiomeWorkflowII.html 
+# Full acknowledgement to their wonderful work here
 
-# Create table, number of features for each phyla
+# View a table of ps_filt containing the number of features/ASVs for each phyla
+# phyla with values of 1 indicate only one feature/ASV has been observed for that phyla - values here are worth noting for later
 table(tax_table(ps_filt)[, "Phylum"], exclude = NULL)
-# Remove phyla characterised as NA
+
+# Remove any phyla characterised as NA
 ps0 <- subset_taxa(ps_filt, !is.na(Phylum) & !Phylum %in% c("", "uncharacterized"))
-# Compute prevalence of each feature, store as data.frame
-# This calculates prevalence = number of samples in which each ASV is present 
-# (i.e., has nonzero counts).
-# Result: a vector with one value per ASV.
+
+# Compute the prevalence of each feature/ASV and store as a data.frame
+# This command calculates prevalence = number of samples in which each ASV is present 
+# (i.e., has non-zero counts).
+# Resulting object is prevdf: a vector with one value per ASV.
+
 prevdf = apply(X = otu_table(ps0),
                MARGIN = ifelse(taxa_are_rows(ps0), yes = 1, no = 2),
                FUN = function(x){sum(x > 0)})
 
-# Now you create a data.frame where each row is an ASV and columns include:
+# Now we create a data.frame where each row is an ASV and columns include:
 # Prevalence = number of samples where ASV is present
 # TotalAbundance = total read count across all samples
 # tax_table(ps0) = adds taxonomy data for each ASV
-# Add taxonomy and total read counts to this data.frame
+
 prevdf = data.frame(Prevalence = prevdf,
                     TotalAbundance = taxa_sums(ps0),
                     tax_table(ps0))
-# Compute the total and average prevalences of the features in each phyla
+
+# Compute both the total and average prevalences of the features in each phyla
+
 plyr::ddply(prevdf, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
+
 # This groups by Phylum and gives:
 # Mean prevalence across all ASVs in that phylum (i.e., how often ASVs 
 # from this phylum appear in samples on average)
 # Total prevalence = sum of all prevalence values for that phylum (i.e., total
 # number of ASV appearances across all samples)
-
 # This allows us to do prevalence filtering.
-# All of these are extremely low prevalence in the dataset
-# Define phyla to filter
-# Change these to match your data if necessary, based on counts and prevalence
-filterPhyla = c("Bdellovibrionota", "Synergistota",
-                "WPS-2", "Gemmatimonadota",
-                "Planctomycetota", "Verrucomicrobiota")
 
-# Filter the phyloseq object to remove the specified phyla
-ps1 = subset_taxa(ps0, !Phylum %in% filterPhyla)
-ps1
-ntaxa(ps1)
-length(get_taxa_unique(ps1, "Genus")) # 342
-## Notes on filtered phyla here.
-# WPS-2 occured in one boar semen sample. Appears stochastic. 0839K - med depth.
-# Verrucomicrobiota - 3 ASVs appears in one boar swab in extremely low numbers.
-# Acidobacteriota - 3 ASVS, one appears in most dilute cell mock.
-# Others are in extender and boar swab.
-# Bdellovibrionota - 2 ASVs - 1 in boar swab (low prev), 1 in semen (ASV344).
-# Myxococcota - 1 in an extender sample, fairly high, the other 2 similar to WPS-2
-# Synergistota - 2ASV - one boar, 1 semen, extremely low prev. Remove.
-# Gemmatimonadota - as with WPS-2 safe to remove.
-# Planctomycetota - 4 ASVS - 3 semen samples, 1 on glove, all extremely low prev. remove.
-# 1781 taxa remaining.
+### IMPORTANT - AT THIS POINT YOU SHOULD MANUALLY INSPECT THE OUTPUT AND FILTER BASED ON THE VALUES YOU SEE.
+# For example a phyla that contains average prevalence of 1 and total prevalence of 1 could reasonably be pruned 
+# However, this is your dataset - with your own sample numbers and biological plausibility is important to note here too.
+# You can always choose to skip this step and keep taxa to explore in more detail later in the workflow.
+
+# If choosing to filter low prevalence phyla, this is where you would define them
+# Change these to match your data if necessary, based on counts and prevalence
+# The following code is commented out, as it serves as an example only
+# filterPhyla = c("Phyla1", "Phyla2")
+## Filter the phyloseq object to remove the specified phyla
+# ps0 = subset_taxa(ps0, !Phylum %in% filterPhyla)
+# ps0
+
+# Now make a note of the number of features/ASVs and the number of genera post light filtering.
+ntaxa(ps0)
+length(get_taxa_unique(ps0, "Genus"))
+
 ###################################################################
 #
 # Section 2 Characterisation and removal of contaminants
