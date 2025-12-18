@@ -62,6 +62,20 @@ using QIIME2. The R script performs the following major steps:
    - Phylograms and tree-based representations of selected taxa
 
 ---
+## Intended mode of use
+
+This workflow is designed to be run **interactively** in R (e.g. in RStudio),
+executing sections sequentially and inspecting outputs as they are generated.
+
+Several steps (particularly initial QC, contamination assessment, and
+mock-based thresholding) are intentionally not fully automated, as they
+require dataset-specific judgement and biological plausibility checks.
+
+While the full script can be sourced end-to-end, users are strongly
+encouraged to step through the analysis and review intermediate results
+before proceeding to downstream filtering and diversity analyses.
+
+---
 
 ## Input requirements
 
