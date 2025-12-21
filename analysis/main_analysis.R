@@ -226,88 +226,268 @@ ntaxa(ps0)
 length(get_taxa_unique(ps0, "Genus"))
 
 ###################################################################
-#
-# Section 2 Characterisation and removal of contaminants
-#
+# SECTION 3: Characterisation and removal of contaminants
 ##################################################################
 
-# At this stage, we load a curated list of common contaminant genera.
-# However, since there is no validated "true" semen microbiome database,
-# and some genera may be both contaminants and real residents,
-# we will not filter or label taxa as contaminants yet.
-# Instead, we will characterize all sample types (semen, skin, glove, controls)
-# and use overlap and abundance patterns to inform contaminant identification later.
-# The code below is left for future use.
+# This section of the workflow directly references the decontam program and associated vignette:
+# https://benjjneb.github.io/decontam/vignettes/decontam_intro.html
+# Create a dataframe of phyloseq object in order to plot library size against sample type
 
-contam_database <- read.csv(file.path(path.in, "contamination_database.csv"))
-# ... (rest of contaminant annotation code)
+df <- as.data.frame(sample_data(ps0))
 
-### Contaminant genera
-#genera that have been identified as contaminants in previous studies in the literature.
-contaminatinggenera <- contam_database |>
-  group_by(Genus) |>
-  mutate(numberstudies = length(unique(Reference)))
-library(bindrcpp)
-contam_df <- as.data.frame(contaminatinggenera)
+# Use the unfiltered dataset to show library size
 
-#genera that have been identified as contaminants in more than one previous study
-contam_multiple <- unique(contaminatinggenera$Genus[contaminatinggenera$numberstudies > 1])
-contam_multiple <- contam_multiple[contam_multiple != "unspecified"]  #68 of these
-
-#genera that have been identified as contaminants in at least one previous study
-contam_one <- unique(contaminatinggenera$Genus[contaminatinggenera$Genus != 'unspecified']) #213 of these
-
-contam <- unique(contam_df$Genus)
-contam2 <- unique(contam_df$Genus[contam_df$numberstudies>1])
-# We will use this contaminant list later.
-
-# Create a dataframe of phyloseq object in order to plot library size
-# against sample type
-
-df <- as.data.frame(sample_data(ps1)) # put sample data into a
-# ggplot friendly dataframe
-# Use unfiltered dataset to show library size
-df$LibrarySize <- sample_sums(ps1)
+df$LibrarySize <- sample_sums(ps0)
 df <- df[order(df$LibrarySize),]
 df$Index <- seq(nrow(df))
-  
+
+# In this plot we are indicating the different sample-types by shape. 
+# You should amend the code if you wish to plot any controls, blanks, or environmental samples included in your dataset.
+
 ggplot(data = df, aes(x = Index, y = LibrarySize, shape = sampletype)) +
   geom_point(aes(), size = 2.5, alpha = 0.8) +
-  geom_hline(yintercept = 4350, linetype = "dashed", color = "grey30") +
-  facet_wrap(~Tapestation) +
-  labs(title = "Library Size against Sample Type and Tapestation assay",
-       subtitle = "Horizontal intercept = Library size of negative control (4350 features)",
-       caption = "Off-target amplification in boar semen has resulted in depleted library sizes",
+  labs(title = "Library Size against Samples",
        shape = "Sample Type") +
-  scale_shape_discrete(labels = c("Boar Swab", "Extender", "Glove Swab",
-                                   "Negative Control", "Positive Control",
-                                   "Boar Semen")) +
   theme_bw(base_size = 10) +
   theme(text = element_text(size = 10),
         plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
         legend.background = element_blank(),
         legend.box.background = element_rect(colour = "black"),
         axis.text.x = element_text(face = "bold", angle = 90),
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 10))
-ggsave("Genus_16S_librarysize.pdf", width = 8, height = 6, units = "in")
-# There are two options with Macrogen data. I can id contaminants using the
-# prevalence method - based on neg control sample / blank
+        plot.title = element_text(size = 14, face = "bold"))
+
+# There are two options to identify contaminant taxa with the decontam package. 
+# The most reliable is to use the prevalence method - based on neg control sample / blank
 # Principle here is that prevalence (presence/absence across samples)
 # of each feature in true samples is compared to prevalence in blanks
 # to id contaminants.
-# There is also the possibility to try using quantitative data.
 
-# The following section uses the frequency method of identifying
-# contaminants. The input DNA concentration is used as provided
-# by Macrogen.
-# NB - some samples were quantified twice following additional
-# QC. Additional details of these steps is not available at this
-# time. Any samples that have two readings, the second reading is
-# used as this represents what was used in library prep.
+# First summarise the group variable as a logical
+### IMPORTANT NOTE
+# It is good practice to use more than one blank/negative control. Use of a single blank, even in a small
+# dataset, results in a statistically coarse assessment of prevalence. 
 
+sample_data(ps0)$is.neg <- sample_data(ps0)[[control_column]] %in% negative_control_labels
+contamdf.prev <- isContaminant(ps0,
+                               method = "prevalence",
+                               neg = "is.neg")
+table(contamdf.prev$contaminant)
+# Inspection of the table should tell you how many taxa have been flagged as potential contaminants.
 
-contamdf.freq <- isContaminant(ps1, method="frequency", conc="quant_reading")
+head(which(contamdf.prev$contaminant))
+# This code will give you the numbers of the relevant taxa. 
+# You can try some more aggressive settings by setting a p value at 0.5 rather than 0.1
+# this threshold will id sequences that are more prevalent in neg controls
+# than in true samples, as contaminant.
+contamdf.prev05 <- isContaminant(ps0,
+                                 method = "prevalence",
+                                 neg = "is.neg",
+                                 threshold = 0.5)
+table(contamdf.prev05$contaminant)
+head(which(contamdf.prev05$contaminant))
+# Again this code will give you a list of ASVs and you should inspect the taxonomy.
+# At this point you may wish to inspect the taxonomy of these ASVs.
+# I recommend inspecting, as in low-biomass samples, it is possible that taxa from samples of higher
+# microbial biomass can hop across, within your dataset. I have seen this occur between a DNA mock and a blank,
+# or a high depth biological sample into the blank. So it is always worth reviewing.
+
+# Get ASV names of contaminants
+contaminant_asvs_05 <- rownames(contamdf.prev05)[contamdf.prev05$contaminant]
+# Subset taxonomy table to just contaminants
+taxonomy_table <- Taxonomy[contaminant_asvs_05, ]
+# View the result
+taxonomy_table
+# Now review those contaminants identified using a lower prevalence threshold
+contaminant_asvs_01 <- rownames(contamdf.prev)[contamdf.prev$contaminant]
+taxonomy_table_01 <- Taxonomy[contaminant_asvs_01, ]
+taxonomy_table_01
+
+# How many times were these taxa observed in all samples?
+physeq.pa <- transform_sample_counts(ps0,
+                                     function(abund) 1*(abund>0))
+physeq.pa.neg <- prune_samples(sample_data(physeq.pa)$sampletype == "blank",
+                               physeq.pa)
+physeq.pa.pos <- prune_samples(sample_data(physeq.pa)$sampletype != "blank",
+                               physeq.pa)
+# Make a data.frame of prevalence in positive and negative samples
+df.pa <- data.frame(pa.pos=taxa_sums(physeq.pa.pos), pa.neg=taxa_sums(physeq.pa.neg),
+                    contaminant=contamdf.prev05$contaminant)
+ggplot(data = df.pa, aes(x = pa.neg, y = pa.pos, color = contaminant)) +
+  geom_point() +
+  xlab("Prevalence (Negative Controls)") +
+  ylab("Prevalence (True Samples)") +
+  labs(
+    title = "Prevalence of ASVs in Negative Controls vs. Biological Samples",
+    subtitle = "Blue = contaminants; Red = non-contaminants",
+    caption = “This plot allows inspection of prevalence differences between negative controls and biological samples”,
+    colour = "Contaminant")
+                                     
+# This plot should give you an indication as to how often the taxa identified as
+# true contaminants are present within the biological samples.
+
+## The following section gives an example of exploratory analysis, should you suspect,
+# based on taxonomy, whether index hopping has occured from one of your own samples, into the blank.
+# As this section is optional - the following code has been commented out
+                                     
+# Additional pkgs
+# library(forcats); library(stringr); library(scales)
+
+# Inputs you may need to tweak
+# grp_col <- "sampletype"                 
+# sample_data column with "Sample"/"Blank"
+# lvl_sample <- "sample"; lvl_blank <- "blank"
+
+# short whitelist containing taxa of interest
+# wl_regex <- regex("^(TaxaName1|TaxaName2|TaxaName3|TaxaName3)$", ignore_case = TRUE)
+# Or use ASV numbers
+# wl_regex <- regex("^(ASV81|ASV82|ASV79|ASV44|ASV85|ASV87|ASV47|ASV45|ASV4|ASV86)$", ignore_case = TRUE)
+
+# calculate RA at Genus level
+# ps_rel <- transform_sample_counts(ps0, function(x) x/sum(x))
+# gen <- tax_glom(ps_rel, taxrank = "Genus", NArm = TRUE)
+# df  <- psmelt(gen) |>
+#  mutate(Genus = as.character(Genus),
+#         Type = ifelse(group == "blank", "blank", "sample")) |>
+#  filter(str_detect(Genus, wl_regex))
+# --- 1) RA for ASVs ---
+# blankdf <- psmelt(ps_rel) |>
+#  filter(sampletype == "blank",
+#         str_detect(OTU, wl_regex))
+# biodf <-   psmelt(ps_rel) |>
+#  filter(sampletype != "blank",
+#         str_detect(OTU, wl_regex))
+                                  
+# Create Summaries: mean RA, prevalence, sample enrichment
+# eps <- 1e-6
+# summ <- df |>
+#  group_by(Genus, sampletype) |>
+#  summarise(meanRA = mean(Abundance, na.rm=TRUE),
+#            prev   = mean(Abundance > 0, na.rm=TRUE),
+#            .groups = "drop_last") |>
+#  tidyr::pivot_wider(names_from = sampletype, values_from = c(meanRA, prev), values_fill = 0) |>
+#  ungroup() |>
+#  transmute(
+#    Genus,
+#    log2_enrich = log2((get(paste0("meanRA_", lvl_sample)) + eps) /
+#                         (get(paste0("meanRA_", lvl_blank )) + eps)),
+#    prev_sample = get(paste0("prev_",   lvl_sample)),
+#    prev_blank  = get(paste0("prev_",   lvl_blank)),
+#    prev_diff   = prev_sample - prev_blank
+#  )
+# blank_summ <- blankdf |>
+#  group_by(OTU) |>
+#  summarise(meanRA = mean(Abundance, na.rm=TRUE),
+#            maxRA = max(Abundance, na.rm=TRUE),
+#            prev   = mean(Abundance > 0, na.rm=TRUE),
+#            .groups = "drop_last")
+# bio_summ <- biodf |>
+#  group_by(OTU) |>
+#  summarise(meanRA = mean(Abundance, na.rm=TRUE),
+#            maxRA = max(Abundance, na.rm=TRUE),
+#            prev   = mean(Abundance > 0, na.rm=TRUE),
+#            .groups = "drop_last")
+                                  
+# Create a Dotplot: enrichment (y) with prevalence cue
+# ggplot(summ, aes(x = fct_reorder(Genus, log2_enrich), y = log2_enrich)) +
+#  geom_hline(yintercept = 0, linetype = 2) +
+#  geom_point(aes(size = prev_sample, colour = log2_enrich)) +
+#  coord_flip() +
+#  scale_y_continuous(name = "log2(mean Relative abundance: Sample / Blank)") +
+#  scale_size(range = c(2,6), name = "Prevalence in samples") +
+#  scale_color_gradient2(low = "steelblue", mid = "grey60", high = "firebrick", midpoint = 0,
+#                        name = "log2(mean RA Sample / mean RA Blank)") +
+#  labs(x = NULL, title = "Log2 fold-change of mean relative abundance of key taxa (sample vs blank)") +
+#  theme_bw(base_size = 10) +
+#  theme(text = element_text(size = 10),
+#        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
+#        legend.background = element_blank(),
+#        legend.box.background = element_rect(colour = "black"),
+#        axis.text.x = element_text(face = "bold", angle = 90),
+#        plot.title = element_text(size = 13, face = "bold"))
+
+# Inspection of bio_summ may reveal ASVs that have prevalence of 0 - these you can safely remove
+# Example given below.
+# badtaxa <- c("ASV80", "ASV82", "ASV86", "ASV87")
+
+# Comparison of the two _summ objects may also reveal ASVs that have a prevalence at least 10x higher in bio samples
+# It is recommended you keep these taxa
+# goodTaxa <- setdiff(taxa_names(ps0), badtaxa)
+                                  
+# ps_filt <- prune_taxa(goodTaxa, ps_filt)
+# Compare the number of taxa removed
+# ntaxa(ps0)
+# ntaxa(ps_filt)
+
+# Calculate RA at Genus level in the new filtered phyloseq
+# ps_rel2 <- transform_sample_counts(ps_filt, function(x) x/sum(x))
+# gen <- tax_glom(ps_rel2, taxrank = "Genus", NArm = TRUE)
+# df  <- psmelt(gen) |>
+#  mutate(Genus = as.character(Genus),
+#         Type = ifelse(group == "blank", "blank", "sample")) |>
+#  filter(str_detect(Genus, wl_regex))
+
+# Summaries: mean RA, prevalence, sample enrichment
+# summ <- df |>
+#  group_by(Genus, sampletype) |>
+#  summarise(meanRA = mean(Abundance, na.rm=TRUE),
+#            prev   = mean(Abundance > 0, na.rm=TRUE),
+#            .groups = "drop_last") |>
+#  tidyr::pivot_wider(names_from = sampletype, values_from = c(meanRA, prev), values_fill = 0) |>
+#  ungroup() |>
+#  transmute(
+#    Genus,
+#    log2_enrich = log2((get(paste0("meanRA_", lvl_sample)) + eps) /
+#                         (get(paste0("meanRA_", lvl_blank )) + eps)),
+#    prev_sample = get(paste0("prev_",   lvl_sample)),
+#    prev_blank  = get(paste0("prev_",   lvl_blank)),
+#    prev_diff   = prev_sample - prev_blank
+#  )
+
+# Dotplot: enrichment (y) with prevalence cue
+# ggplot(summ, aes(x = fct_reorder(Genus, log2_enrich), y = log2_enrich)) +
+#  geom_hline(yintercept = 0, linetype = 2) +
+#  geom_point(aes(size = prev_sample, colour = log2_enrich)) +
+# coord_flip() +
+#  scale_y_continuous(name = "log2(mean Relative abundance: Sample / Blank)") +
+#  scale_size(range = c(2,6), name = "Prevalence in samples") +
+#  scale_color_gradient2(low = "steelblue", mid = "grey60", high = "firebrick", midpoint = 0,
+#                        name = "log2(mean RA Sample / mean RA Blank)") +
+#  labs(x = NULL, title = "Log2 fold-change of mean relative abundance of key taxa (sample vs blank)") +
+#  theme_bw(base_size = 10) +
+#  theme(text = element_text(size = 10),
+#        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
+#        legend.background = element_blank(),
+#        legend.box.background = element_rect(colour = "black"),
+#        axis.text.x = element_text(face = "bold", angle = 90),
+#        plot.title = element_text(size = 13, face = "bold"))
+                                   
+# summ |> arrange(desc(log2_enrich))
+
+# Finally prune the ASVs that you have determined to be contaminants based on the above analysis                                     
+# You can filter out any taxa you don't wish to remove
+# using the following code example
+
+contamdf.prev05 <- contamdf.prev05 |>
+  tibble::rownames_to_column("ASV") |>
+  filter(ASV != "ASVtokeep") |>
+  tibble::column_to_rownames("ASV")
+
+contam_taxa <- rownames(contamdf.prev05)[contamdf.prev05$contaminant == TRUE]
+ps_decontam <- prune_taxa(!(taxa_names(ps0) %in% contam_taxa), ps0)
+ntaxa(ps0)
+ntaxa(ps_decontam)
+
+# Finally, there is also the possibility to try using quantitative data.
+# However, when working with host-associated microbiota - it is not possible to use any
+# quantitative data based on DNA concentration (initial Qubit data) of your samples, as host DNA is likely
+# to represent a large part of this number
+                                     
+# An alterntative is to use the post PCR input DNA concentration as provided
+# by a sequencing provider, or your own work.
+# NB - therefore the following data should be interpreted cautiously and not used as the sole method for
+# determining contaminant taxa.
+
+contamdf.freq <- isContaminant(ps_decontam, method="frequency", conc="quant_reading")
 head(contamdf.freq)
 # This calculation has returned a data.frame with several columns
 # the most important being $p which contains the probability 
@@ -319,10 +499,8 @@ head(contamdf.freq)
 # value of threshold = 0.1 was used, and $contaminant=TRUE if 
 # $p < 0.1.
 table(contamdf.freq$contaminant)
-# So just 23 ASVs listed as contaminants here out of 1781 total in the
-# phyloseq object.
-#[1]  252 273 520 530 etc
-# Get logical vector of contaminants
+
+# Get a logical vector of contaminants
 contaminant_logical <- contamdf.freq$contaminant
 # Get ASV IDs (these are the rownames of contamdf.freq,
 # which should match taxa_names in your phyloseq object)
@@ -330,164 +508,19 @@ contaminant_ASVs <- rownames(contamdf.freq)[contaminant_logical]
 noncontaminant_ASVs <- rownames(contamdf.freq)[!contamdf.freq$contaminant]
 # This will print the ASV IDs classified as contaminants
 contaminant_taxonomy <- Taxonomy[contaminant_ASVs, ]
-# Step 1: Select specific ASVs
-# Replace these with ASVs *you know* to be contaminants from your dataset
 
-selected_contaminants <- c("ASV273", "ASV320", "ASV840") # Second example if prefered
-selected_noncontaminants <- c("ASV214", "ASV212", "ASV256") # ASVs you manually selected
-# Combine for plotting
-# I'd prefer to use specific ASVs as non-contaminants
-# ASV 214, 212, 256
-selected_ASVs <- c(selected_contaminants, selected_noncontaminants)
-# Example: get genus or species for selected ASVs
-asv_labels <- Taxonomy[selected_ASVs, "Species"] # or "Genus_silva", etc.
-names(asv_labels) <- selected_ASVs
-freq_plot <- plot_frequency(ps1, selected_ASVs, conc="quant_reading") + 
-  xlab("log10(DNA Concentration (PicoGreen fluorescent intensity))") +
-  labs(title = "Frequency patterns of sample ASVs in a boar semen dataset.",
-       subtitle = "The frequency of ASVs 273, 320 and 840 are inversely proportional to DNA concentration.",
-       caption = "ASVs 273 is classified as Acinetobacter, 320 as Pseudomonas, both common sequencing contaminants.",
-       y = "log10(Frequency)") +
-  theme_minimal(base_size = 10) +
-  theme(text = element_text(size = 10),
-        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
-        legend.background = element_blank(),
-        legend.box.background = element_rect(colour = "black"),
-        axis.text.x = element_text(face = "bold", angle = 90),
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 10))
-freq_plot
-ggsave("Decontam_freq_genus.pdf", width = 8, height = 6, units = "in")
-# Now that we have identified contaminant taxa in this method
-# We can remove them
-ps1
-ps.noncontam <- prune_taxa(!contamdf.freq$contaminant, ps1)
-ps.noncontam
-ntaxa(ps.noncontam)
-# 1758 taxa remaining
-# This shows I have removed 23 taxa.
-length(get_taxa_unique(ps.noncontam, "Genus")) # 340
+# After reviewing the taxonomy of the above, you may choose to remove them
+ps_decontam
+ps_decontam_freq <- prune_taxa(!contamdf.freq$contaminant, ps_decontam)
+ntaxa(ps_decontam_freq)
+length(get_taxa_unique(ps_decontam_freq, "Genus"))
 
-# First I should summarise the group variable as a logical
-sample_data(ps1)$is.neg <- sample_data(ps1)$sampletype == "negcontrol"
-contamdf.prev <- isContaminant(ps1,
-                               method = "prevalence",
-                               neg = "is.neg")
-table(contamdf.prev$contaminant)
-# Okay this setting detected just 4 contaminants
-head(which(contamdf.prev$contaminant))
-# [1] 409 617 618 824
-# These relate to Corynebacterium, Cloacibacterium, Cloacibacterium normanense, Deinococcus
-# So, let's try some more aggressive settings byt setting p value
-# at 0.5 rather than 0.1
-# this threshold will id sequences that are more prev in neg control
-# than in true samples, as contaminant. Let's see
-contamdf.prev05 <- isContaminant(ps1,
-                                 method = "prevalence",
-                                 neg = "is.neg",
-                                 threshold = 0.5)
-table(contamdf.prev05$contaminant)
-head(which(contamdf.prev05$contaminant))
-# [1] 253 409 503 617 618 824
-# Important - ASV286 includes E. coli, also present in mock. Is this a
-# read contaminant as well as true biological organism?
-# All E coli in the dataset should be treated with caution.
-# Counterpoint is that E coli very frequently isolated from culture
-# of these samples.
-# 540 is Leifsonia
-# Okay - so here we identified 6 as true contaminants. This seems
-# more promising, but is still not great. Also this setting includes
-# ASV286, E.coli, which is present in both cell and DNA mocks and some
-# biological samples - this appears to be genuine, so we are proceeding with
-# lower prevalence setting.
-# How many times were these taxa observed in all samples?
-
-physeq.pa <- transform_sample_counts(ps1,
-                                     function(abund) 1*(abund>0))
-physeq.pa.neg <- prune_samples(sample_data(physeq.pa)$sampletype == "negcontrol",
-                               physeq.pa)
-physeq.pa.pos <- prune_samples(sample_data(physeq.pa)$sampletype != "negcontrol",
-                               physeq.pa)
-# Make data.frame of prevalence in positive and negative samples
-df.pa <- data.frame(pa.pos=taxa_sums(physeq.pa.pos), pa.neg=taxa_sums(physeq.pa.neg),
-                    contaminant=contamdf.prev05$contaminant)
-ggplot(data = df.pa, aes(x = pa.neg, y = pa.pos, color = contaminant)) +
-  geom_point() +
-  xlab("Prevalence (Negative Controls)") +
-  ylab("Prevalence (True Samples)") +
-  labs(
-    title = "Prevalence of ASVs in Negative Controls vs. Biological Samples",
-    subtitle = "Blue = contaminants; Red = non-contaminants",
-    caption = "Note: The prevalence of ASVs in negative controls is much higher than in biological samples.",
-    colour = "Contaminant")
-ggsave("Decontam_prev_boar.png", scale = 2)
-# What this plot tells us is that, most of the taxa identified as
-# true contaminants are rarely present within the biological samples.
-# This is a good sign.
-# NB come back to this plot later when I have characterised the taxa
-# within the mock samples, in particular the cell-based mock samples for which
-# there is a dilution series. In the more dilute samples, we should see a
-# higher prevalence of contaminants. These can be used to inform the
-# prevalence of contaminants in the biological samples.
-
-# Next look at how difference between samples, prior to pruning,
-# how much variation can be explained by the groups of women
-# Here we use the bray beta diversity metric to produce a PCoA plot
-
-# Currently - this plot not relevant as full section on beta-diversity later
-physeq.ord <- ordinate(ps.noncontam, "PCoA", "bray")
-plot_ordination(ps.noncontam, physeq.ord, type="samples", color="Site", shape = "sampletype") +
-  labs(title = "Bray-curtis PCoA of Genus Boar Dataset",
-       subtitle = "The blank and the other controls are clearly separate from biological samples")
-ggsave("Decontam_PCoA_genus.png", scale = 2)
-# In this plot, 14.5% of the variation is explained
-# by sampletype - the blank, plus the other controls are clearly
-# separate from the biological samples, located in the lower left side of the plot.
-# The sampling controls are not so clearly separated, indicating that there may be
-# some cross over of ASVs between the sampling controls and the biological samples.
-#
-# Now let's look at the taxa that were identified as contaminants
-# and see if they are present in the biological samples
-# First, let's look at the taxa that were identified as contaminants
-# by the frequency method
-
-# Get ASV names of contaminants
-contaminant_asvs_05 <- rownames(contamdf.prev05)[contamdf.prev05$contaminant]
-contaminant_asvs_freq <- rownames(contamdf.freq)[contamdf.freq$contaminant]
-# Subset taxonomy table to just contaminants
-taxonomy_table <- Taxonomy[contaminant_asvs_05, ]
-taxonomy_table_freq <- Taxonomy[contaminant_asvs_freq, ]
-# View the result
-taxonomy_table
-taxonomy_table_freq
-# Now review those contaminants identified using a lower prevalence threshold
-contaminant_asvs_01 <- rownames(contamdf.prev)[contamdf.prev$contaminant]
-
-taxonomy_table_01 <- Taxonomy[contaminant_asvs_01, ]
-taxonomy_table_01
-# After reviewing these, I would like to remove Leifsonia but not E coli
-# present in biological samples and intentionally present in my mock samples.
-# The cross over presence of this into the negative controls may be a result of
-# index hopping.
-# I will therefore remove the taxa identified using the .05 threshold, yet I
-# will remove ASV286 from this list first.
-
-contamdf.prev04 <- contamdf.prev05 |>
-  tibble::rownames_to_column("ASV") |>
-  filter(ASV != "ASV286") |>
-  tibble::column_to_rownames("ASV")
-
-contam_taxa <- rownames(contamdf.prev04)[contamdf.prev04$contaminant == TRUE]
-ps.noncontam <- prune_taxa(!(taxa_names(ps.noncontam) %in% contam_taxa), ps.noncontam)
-ntaxa(ps.noncontam)
-# Now have 1753 taxa
-psprev <- transform_sample_counts(ps.noncontam, function(x) ifelse(x>0, 1, 0))
-psrelabund <- transform_sample_counts(ps.noncontam, function(x) x/sum(x))
-psrelabund_unfiltered <- transform_sample_counts(bac_physeq, function(x) x/sum(x))
 #######################################################################
 # Section 3: Analysis of mock samples
 #######################################################################
-
+psprev <- transform_sample_counts(ps.noncontam, function(x) ifelse(x>0, 1, 0))
+psrelabund <- transform_sample_counts(ps.noncontam, function(x) x/sum(x))
+psrelabund_unfiltered <- transform_sample_counts(bac_physeq, function(x) x/sum(x))
 # Now let's think about reviewing the mock samples before pruning, as this may provide additional
 # information about the contaminants present.
 
