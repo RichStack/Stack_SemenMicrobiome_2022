@@ -520,7 +520,7 @@ length(get_taxa_unique(ps_decontam_freq, "Genus"))
 #######################################################################
 # For this part of the analysis, you will need to have a csv file containing the expected composition of any mock communities that
 # you have included in your run. Important: Your csv file should contain these fields, which will allow you to bind with your phyloseq object.
-# (OTU, Sample, sampletype, Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
+# (OTU, Sample, .data[[mock_column]], Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
 # In the example below, the Sample field is given a value of `Expected` 
 # As stated earlier, you can use a combination of cell and DNA mocks.
 # The code block provided allows you to visualise expected v observed relative abundance (RA) in mock samples, but you will
@@ -531,7 +531,7 @@ barplot_threshold <- 0.01
 scatter_threshold <- 0.001
 log_mock_threshold <- 1e-10
                                      
-# First we create some phyloseq objects were counts are transformed into relative abundance (RA)
+# First we create some phyloseq objects where counts are transformed into relative abundance (RA)
 psrelabund <- transform_sample_counts(ps_decontam, function(x) x/sum(x))
 psrelabund_unfiltered <- transform_sample_counts(bac_physeq, function(x) x/sum(x))
 # 4.1 Expected vs observed composition (barplots)
@@ -541,7 +541,7 @@ df <- psmelt(psrelabund)
 # 2. Select only your mock samples
 mock_df <- df |>
   filter(.data[[mock_column]] %in% mock_labels) |>
-  select(OTU, Sample, sampletype, Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
+  select(OTU, Sample, .data[[mock_column]], Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
 
 # 3. Summarize ASV abundances across your samples (per sample)
 mock_asv_table <- mock_df |>
@@ -552,12 +552,16 @@ mock_asv_table <- mock_df |>
 # 4. View the table
 print(mock_asv_table)
 
-write.csv(mock_asv_table, "mock_asv_table.csv", row.names = FALSE)
+write.csv(
+  mock_asv_table,
+  file.path(output_dir, "mock_asv_table.csv"),
+  row.names = FALSE
+)
 
 # Read in input values for Mock - i.e. expected abundance
 Mock_Expected_RA <- readr::read_csv(mock_expected_path)
-expected_taxa <- unique(Mock_Expected_RA$Genus)
-print(expected_taxa) # to check if all looks correct
+expected_taxa_standard <- unique(Mock_Expected_RA$Genus)
+print(expected_taxa_standard) # to check if all looks correct
                                                  
 #Join the two dataframes
 Join <- dplyr::bind_rows(
@@ -568,7 +572,7 @@ Join <- Join |>
   mutate(Genus = ifelse(Abundance < barplot_threshold, "Other", Genus))
 # Expected taxa below the plotting threshold are grouped as ‘Other’ and treated as unexpected for visualisation.
 Join <- Join |>
-  mutate(Expected = ifelse(Genus %in% expected_taxa, "Expected", "Unexpected"))
+  mutate(Expected = ifelse(Genus %in% expected_taxa_standard, "Expected", "Unexpected"))
 # List your genera as they appear in the plot
 genera_levels <- unique(Join$Genus)
 
@@ -596,15 +600,15 @@ Join |>
 
 # 4.2 Detection thresholds from dilution mocks
 # If you have run a dilution series of mock samples (also highly recommended)
-# then you can use these data to determine a minimum detection threshold for expected ASvs in these samples
+# then you can use these data to determine a minimum detection threshold for expected ASVs in these samples
 min_detected <- min(mock_df$Abundance[
-  mock_df$Genus %in% expected_taxa &
+  mock_df$Genus %in% expected_taxa_standard &
     mock_df$Abundance > 0
 ])
 min_detected
 # This should give you the min abundance which you can use to determine a filtering threshold in order to remove 
 # any spurious ASVs with abundance below this level.
-# For a more detailed breakdown of abunadnces of spurious versus expected taxa try this.
+# For a more detailed breakdown of abundances of spurious versus expected taxa try this.
 # 1. Minimum abundance of expected taxa per sample
 min_expected <- Join |>
   filter(Expected == "Expected") %>%
@@ -735,9 +739,6 @@ stats_df <- comp3 |>
     mae      = round(mae, 2)
   )
 
-# named vector for facet labels
-lab_map <- setNames(stats_df$Sample)
-
 # plot
 p1 <- ggplot(comp3, aes(pmax(exp, eps), pmax(obs, eps))) +
   # 1:1 and tolerance bands (±2× dotted, ±5× dotted lighter)
@@ -756,7 +757,7 @@ p1 <- ggplot(comp3, aes(pmax(exp, eps), pmax(obs, eps))) +
   ggrepel::geom_text_repel(data = subset(comp3, is_mock),
                            aes(label = Canonical),
                            size = 2, max.overlaps = Inf) +
-  facet_wrap(~ Sample, nrow = 1, labeller = labeller(Sample = lab_map)) +
+  facet_wrap(~ Sample, nrow = 1) +
   scale_x_log10(limits = c(1e-4, 1), breaks = c(1e-3, 1e-2, 1e-1, 1)) +
   scale_y_log10(limits = c(1e-4, 1), breaks = c(1e-3, 1e-2, 1e-1, 1)) +
   labs(
@@ -788,16 +789,16 @@ print(stats_df)
 # You should create a csv file of the expected abundances as before.
 # Read in input values for Mock - i.e. expected abundance
 Log_Mock_RA <- readr::read_csv(log_mock_expected_path)
-expected_taxa <- unique(Log_Mock_RA$Genus)
-print(expected_taxa) # check if all good
+expected_taxa_log <- unique(Log_Mock_RA$Genus)
+print(expected_taxa_log) # check if all good
 
 # Reset the data
 log_mock_df <- psmelt(psrelabund)
 
 # Filter for the log standards
 log_mock_df <- log_mock_df |>
-  filter(Sample == "LogMC") |>
-  select(OTU, Sample, sampletype, Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
+  filter(Sample == log_mock_sample) |>
+  select(OTU, Sample, .data[[mock_column]], Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
 Join <- rbind(log_mock_df, Log_Mock_RA)
 Join <- Join |>
   mutate(Genus = ifelse(Abundance < log_mock_threshold, "Other", Genus))
@@ -806,7 +807,7 @@ Join |>
   geom_point(alpha = 0.8) +
   scale_colour_igv() +
   scale_size_continuous(trans = "log10") +
-  facet_wrap(~sampletype, scales = "free_x") +
+  facet_wrap(~.data[[mock_column]], scales = "free_x") +
   labs(title = "Abundance of Genera in a Logarithmic DNA Mock Standard",
        caption = "Data has been filtered to remove spurious ASVs below 0.000001% relative abundance",
        y = "Genus", x = "Sample", size = "Abundance (log10)") +
@@ -820,9 +821,9 @@ Join |>
   guides(color = "none")
 
 # As with dilution series of mock samples, the log sample can be used to determine the minimum detection threshold level
-# this can be used as a defenisble filtering level, at the ASVs at lower abundances are likely to be spurious.
+# this can be used as a defensible filtering level, at the ASVs at lower abundances are likely to be spurious.
 min_detected_dna <- min(log_mock_df$Abundance[
-  log_mock_df$Genus %in% expected_taxa &
+  log_mock_df$Genus %in% expected_taxa_log &
     log_mock_df$Abundance > 0
 ])
 min_detected_dna
