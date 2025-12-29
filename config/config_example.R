@@ -84,7 +84,8 @@ mock_column <- "sampletype"
 # Values corresponding to mock communities
 mock_labels <- c(
   "Positive control",
-  "Mock"
+  "Mock",
+  "LogMC"
 )
 
 # ----------------------------
