@@ -17,7 +17,6 @@ taxonomy_qza     <- file.path(qiime_dir, "taxonomy.qza")
 # Sample metadata
 metadata_tsv <- "data/metadata.tsv"
 
-
 # ----------------------------
 # Output settings
 # ----------------------------
@@ -70,6 +69,15 @@ dna_concentration_column <- NULL
 # Mock community samples
 # ----------------------------
 
+# Expected relative abundance for standard mock
+mock_expected_path <- "data/mock_expected_abundance.csv"
+
+# Expected relative abundance for logarithmic mock (optional)
+log_mock_expected_path <- "data/log_mock_expected_abundance.csv"
+
+# Name of logarithmic mock sample (if present)
+log_mock_sample <- "LogMC"
+
 # Column in metadata identifying mock samples
 mock_column <- "sampletype"
 
@@ -78,10 +86,6 @@ mock_labels <- c(
   "Positive control",
   "Mock"
 )
-
-# Optional: dilution series column (if present)
-mock_dilution_column <- NULL
-
 
 # ----------------------------
 # Diversity analysis settings
