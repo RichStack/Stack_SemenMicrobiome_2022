@@ -531,13 +531,13 @@ length(get_taxa_unique(ps_decontam_freq, "Genus"))
 psprev <- transform_sample_counts(ps_decontam, function(x) ifelse(x>0, 1, 0))
 psrelabund <- transform_sample_counts(ps_decontam, function(x) x/sum(x))
 psrelabund_unfiltered <- transform_sample_counts(bac_physeq, function(x) x/sum(x))
-
+# 4.1 Expected vs observed composition (barplots)
 # 1. Melt the phyloseq object to a long dataframe
 df <- psmelt(psrelabund)
 
 # 2. Select only your mock samples
 mock_df <- df |>
-  filter(sampletype %in% mock_labels) |>
+  filter(mock_column %in% mock_labels) |>
   select(OTU, Sample, sampletype, Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
 
 # 3. Summarize ASV abundances across your samples (per sample)
@@ -552,7 +552,7 @@ print(mock_asv_table)
 write.csv(mock_asv_table, "mock_asv_table.csv", row.names = FALSE)
 
 # Read in input values for Mock - i.e. expected abundance
-Mock_Expected_RA <- read_csv("MockAbundance.csv")
+Mock_Expected_RA <- readr::read_csv(mock_expected_path)
 expected_taxa <- unique(Mock_Expected_RA$Genus)
 print(expected_taxa) # to check if all looks correct
                                                  
@@ -589,6 +589,7 @@ Join |>
 # It may be worth running this code on both filtered and unfiltered phyloseq objects, to see if there is any difference.
 # in the contaminant taxa that you have detected.
 
+# 4.2 Detection thresholds from dilution mocks
 # If you have run a dilution series of mock samples (also highly recommended)
 # then you can use these data to determine a minimum detection threshold for expected ASvs in these samples
 min_detected <- min(mock_df$Abundance[
@@ -620,7 +621,8 @@ spurious_stats <- Join %>%
 # 3. Combine both
 mock_summary <- full_join(min_expected, spurious_stats, by = "Sample")
 mock_summary
-
+                                                 
+# 4.3 Observed vs expected (log–log scatter)
 # We can also analyse mock samples by producing a log-log observed v expected scatterplot.                                              
 
 # Helper function to harmonise genus labels between expected and observed data
@@ -775,12 +777,13 @@ p1
 print(stats_df)
 # This last command allows you to inspect the regression metrics you have calculated
 # slope, R^2, median log bias, MAE.
-                                                 
+
+# 4.4 Logarithmic mock standards 
 # This last code block is used for any mocks with a logarithmic distribution of taxa.
 # The code assumes your mock is named LogMC
 # You should create a csv file of the expected abundances as before.
 # Read in input values for Mock - i.e. expected abundance
-Log_Mock_RA <- read_csv("LogMockAbundance.csv")
+Log_Mock_RA <- readr::read_csv(log_mock_expected_path)
 expected_taxa <- unique(Log_Mock_RA$Genus)
 print(expected_taxa) # check if all good
 
