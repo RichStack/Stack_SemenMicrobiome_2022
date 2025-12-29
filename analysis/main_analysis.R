@@ -521,6 +521,7 @@ length(get_taxa_unique(ps_decontam_freq, "Genus"))
 # For this part of the analysis, you will need to have a csv file containing the expected composition of any mock communities that
 # you have included in your run. Important: Your csv file should contain these fields, which will allow you to bind with your phyloseq object.
 # (OTU, Sample, sampletype, Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
+# In the example below, the Sample field is given a value of `Expected` 
 # As stated earlier, you can use a combination of cell and DNA mocks.
 # The code block provided allows you to visualise expected v observed relative abundance (RA) in mock samples, but you will
 # need to amend the code block, or add to it, if you have used more than one type of mock (as is recommended).
@@ -563,27 +564,27 @@ Join <- Join |>
   mutate(Genus = ifelse(Abundance < abund_threshold, "Other", Genus))
 Join <- Join |>
   mutate(Expected = ifelse(Genus %in% expected_taxa, "Expected", "Unexpected"))
+# List your genera as they appear in the plot
+genera_levels <- unique(Join$Genus)
 
-# This produces a plot of relative abundance of expected and observed side by side
+# This produces a barplot of relative abundance of expected and observed side by side
 Join |>
-  ggplot(aes(x = Sample, y = Abundance, fill = Genus, colour = Expected)) +
-  geom_bar(stat = "identity", position = "Stack", show.legend = TRUE,  width = 0.5, colour = "black") +
-  #scale_alpha_manual(values = c(Expected = 1, Unexpected = 0.3)) +
-  facet_wrap(~Expected) +
+  ggplot(aes(x = Sample, y = Abundance, fill = Genus)) +
+  geom_bar(stat = "identity", position = "Stack", show.legend = TRUE,  width = 0.3, colour = "black") +
   scale_fill_igv() +
-  labs(title = "Expected and Unexpected Taxa within Mock Samples",
-       subtitle = "Data has been filtered to remove spurious ASVs below 0.1% relative abundance",
-       x = "",
+  labs(title = "Composition of Mock Community Standards against Expected RA",
+       subtitle = "Data has been filtered to remove spurious ASVs below 0.01% relative abundance",
+       x = "Sample",
        y = "Relative Abundance") +
   theme_bw(base_size = 10) +
   theme(text = element_text(size = 10),
         plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
         legend.background = element_blank(),
         legend.box.background = element_rect(colour = "black"),
-        axis.text.x = element_text(face = "bold", angle = 90),
+        axis.text.x = element_text(size = 10, face = "bold", angle = 90),
         plot.title = element_text(size = 14, face = "bold"),
         plot.subtitle = element_text(size = 10))
-
+                                                 
 # Analysis of your mock is another useful method to detect contaminant taxa.
 # It may be worth running this code on both filtered and unfiltered phyloseq objects, to see if there is any difference.
 # in the contaminant taxa that you have detected.
@@ -599,7 +600,7 @@ min_detected
 # any spurious ASVs with abundance below this level.
 # For a more detailed breakdown of abunadnces of spurious versus expected taxa try this.
 # 1. Minimum abundance of expected taxa per sample
-min_expected <- Join %>%
+min_expected <- Join |>
   filter(Expected == "Expected") %>%
   group_by(Sample) %>%
   dplyr::summarise(
@@ -622,66 +623,93 @@ mock_summary
 
 # We can also analyse mock samples by producing a log-log observed v expected scatterplot.                                              
 
-# You may find you need a helper function to align genus names across obs/exp if your ASV classification has not
-# been successful at the genus level.
-canonical_genus <- function(Genus, Family, Order){
-  g <- Genus
-  g <- ifelse(is.na(g) & !is.na(Order) & Order == "Micrococcales", "Micrococcus", g)
-  g <- ifelse(!is.na(g) & grepl("^Micrococcus", g, ignore.case = TRUE), "Micrococcus", g)
-  g <- ifelse(!is.na(g) & g %in% c("Escherichia","Shigella","Escherichia-Shigella"),
-              "Escherichia-Shigella", g)
-  g <- ifelse(!is.na(g), str_squish(g), g)
-  g[is.na(g) | g == ""] <- "Unassigned"
-  g
-}
+# Helper function to harmonise genus labels between expected and observed data
+#
+# This is mainly useful when a known mock taxon has only been classified
+# at a higher taxonomic rank in your dataset.
+#
+# Example shown here:
+# In some datasets, Micrococcus ASVs are only classified to Order level
+# (Micrococcales). This function maps those ASVs back to "Micrococcus"
+# so that expected vs observed comparisons can be made at genus level.
+#
+# IMPORTANT:
+# You should adapt or extend this function based on the taxonomic
+# behaviour observed in *your own* dataset.
 
-# ---------- OBSERVED (MC) ----------
-obs_df <- mock_df %>%
-  dplyr::filter(Sample %in% c("51ACELLMC8", "52ACELLMC5", "53ACELLMC3")) %>%
-  dplyr::mutate(Canonical = canonical_genus(Genus, Family, Order)) %>%
-  dplyr::group_by(Sample, Canonical) %>%
+canonical_genus <- function(Genus, Family = NULL, Order = NULL) {
+
+  g <- Genus
+
+  # Rescue Micrococcus classified only at Order level
+  g <- ifelse(
+    is.na(g) & !is.na(Order) & Order == "Micrococcales",
+    "Micrococcus",
+    g
+  )
+
+  # Clean up whitespace and missing values
+  g <- ifelse(!is.na(g), stringr::str_squish(g), g)
+  g[is.na(g) | g == ""] <- "Unassigned"
+
+  return(g)
+}
+# Additional examples you *may* wish to include, depending on your dataset:
+#
+# # Harmonise Escherichia / Shigella labels
+# g <- ifelse(
+#   !is.na(g) & g %in% c("Escherichia", "Shigella", "Escherichia-Shigella"),
+#   "Escherichia-Shigella",
+#   g
+# )
+
+# OBSERVED (MC) 
+obs_df <- mock_df |>
+  dplyr::mutate(Canonical = canonical_genus(Genus, Family, Order)) |>
+  dplyr::group_by(Sample, Canonical) |>
   dplyr::summarise(obs = sum(Abundance, na.rm = TRUE), .groups = "drop")
 
-# ---------- EXPECTED ----------
-exp_df <- CellMockRelAdjusted %>%
-  dplyr::filter(Sample == "Expected") %>%
-  dplyr::mutate(Canonical = canonical_genus(Genus, Family, Order)) %>%
-  dplyr::group_by(Canonical) %>%
+# EXPECTED 
+exp_df <- Mock_Expected_RA |>
+  dplyr::mutate(Canonical = canonical_genus(Genus, Family, Order)) |>
+  dplyr::group_by(Canonical) |>
   dplyr::summarise(exp = sum(Abundance, na.rm = TRUE), .groups = "drop")
 
-# ---------- JOIN BY TAXON ONLY ----------
-comp <- full_join(exp_df, obs_df, by = "Canonical") %>%
+# JOIN BY TAXON ONLY
+comp <- full_join(exp_df, obs_df, by = "Canonical") |>
   replace_na(list(exp = 0, obs = 0))
 
-# define the recipe set once from expected
-recipe_taxa <- exp_df$Canonical
+# define the mock taxa once from expected
+mock_taxa <- exp_df$Canonical
 
-# Optional: filter to keep all recipe taxa + non-recipe >= 0.1% (your 0.001 threshold)
+# Optional: filter to keep all mock taxa + non-mock >= 0.1% (0.001 threshold)
+# Threshold used only to collapse low-abundance taxa for visual clarity
 thr <- 0.001
-comp_filt <- comp %>%
-  filter(Canonical %in% recipe_taxa | pmax(exp, obs) >= thr)
+comp_filt <- comp |>
+  filter(Canonical %in% mock_taxa | pmax(exp, obs) >= thr)
 
 # flags for plotting
-comp_filt <- comp_filt %>%
+comp_filt <- comp_filt |>
   dplyr::mutate(
     absent_in_obs  = exp > 0 & obs == 0,
-    unexpected_tax = !(Canonical %in% recipe_taxa) & obs > 0
+    unexpected_tax = !(Canonical %in% mock_taxa) & obs > 0
   )
-# ---------- SCATTER: observed vs expected (single panel) ----------
+# SCATTERPlot: observed vs expected (single panel)
 eps <- 1e-4
 # make a flag for mock taxa
-comp3 <- comp_filt %>% mutate(is_recipe = exp > 0)
+comp3 <- comp_filt |>
+  mutate(is_mock = exp > 0)
 
-# --- per-facet metrics on the mock taxa only (exp > 0) ---
+# per-facet metrics on the mock taxa only (exp > 0) ---
 eps_stat <- 1e-6
-stats_df <- comp3 %>%
-  dplyr::filter(is_recipe) %>%
+stats_df <- comp3 |>
+  dplyr::filter(is_mock) |>
   mutate(exp_adj = pmax(exp, eps_stat),
          obs_adj = pmax(obs, eps_stat),
          lx = log10(exp_adj), ly = log10(obs_adj),
          log_bias = ly - lx,
-         abs_log_err = abs(log_bias)) %>%
-  group_by(Sample) %>%
+         abs_log_err = abs(log_bias)) |>
+  group_by(Sample) |>
   group_modify(~{
     m <- lm(ly ~ lx, data = .x)
     tibble(
@@ -691,25 +719,20 @@ stats_df <- comp3 %>%
       med_bias  = median(.x$log_bias),
       mae       = median(.x$abs_log_err)
     )
-  }) %>%
-  ungroup() %>%
-  # round and build facet-strip labels with dilution info
+  }) |>
+  ungroup() |>
+  # round
   mutate(
     slope    = round(slope, 2),
     r2       = round(r2, 2),
     med_bias = round(med_bias, 2),
-    mae      = round(mae, 2),
-    Dilution = recode(Sample,
-                      "51ACELLMC8" = "10^8 cells (undiluted)",
-                      "52ACELLMC5" = "10^5 cells",
-                      "53ACELLMC3" = "10^3 cells"),
-    strip_lab = paste0(Dilution)
+    mae      = round(mae, 2)
   )
 
 # named vector for facet labels
 lab_map <- setNames(stats_df$strip_lab, stats_df$Sample)
 
-# --- plot ---
+# plot
 p1 <- ggplot(comp3, aes(pmax(exp, eps), pmax(obs, eps))) +
   # 1:1 and tolerance bands (±2× dotted, ±5× dotted lighter)
   geom_abline(slope = 1, intercept = 0, linetype = 2, linewidth = 0.5) +
@@ -717,21 +740,21 @@ p1 <- ggplot(comp3, aes(pmax(exp, eps), pmax(obs, eps))) +
   geom_abline(slope = 0.5, intercept = 0, linetype = "dotted", alpha = 0.6) +
   geom_abline(slope = 5, intercept = 0, linetype = "dotted", alpha = 0.35) +
   geom_abline(slope = 0.2, intercept = 0, linetype = "dotted", alpha = 0.35) +
-  # unexpected taxa (non-recipe): faint solid dots
-  geom_point(data = subset(comp3, !is_recipe),
+  # unexpected taxa (non-mock): faint solid dots
+  geom_point(data = subset(comp3, !is_mock),
              size = 1.3, shape = 16, alpha = 0.5) +
-  # expected taxa (recipe): hollow circles
-  geom_point(data = subset(comp3, is_recipe),
+  # expected taxa (mock): hollow circles
+  geom_point(data = subset(comp3, is_mock),
              size = 2.8, shape = 21, fill = "white", stroke = 0.9) +
   # labels only for expected taxa
-  ggrepel::geom_text_repel(data = subset(comp3, is_recipe),
+  ggrepel::geom_text_repel(data = subset(comp3, is_mock),
                            aes(label = Canonical),
                            size = 2, max.overlaps = Inf) +
   facet_wrap(~ Sample, nrow = 1, labeller = labeller(Sample = lab_map)) +
   scale_x_log10(limits = c(1e-4, 1), breaks = c(1e-3, 1e-2, 1e-1, 1)) +
   scale_y_log10(limits = c(1e-4, 1), breaks = c(1e-3, 1e-2, 1e-1, 1)) +
   labs(
-    title = "Cell-based mock dilution series: observed vs expected (genus level)",
+    title = "Scatterplot of observed vs expected taxa in mock samples (genus level)",
     subtitle = "Dashed = 1:1; dotted = ±2× and ±5× bands. Hollow = mock taxa; faint = unexpected (≥0.1% RA).",
     x = "log10 Expected Relative Abundance",
     y = "log10 Observed Relative Abundance"
@@ -749,101 +772,36 @@ p1 <- ggplot(comp3, aes(pmax(exp, eps), pmax(obs, eps))) +
   annotate("text", x = 7e-4, y = 0.240, label = "±5×", size = 3)
 
 p1
-ggsave("logcellmock.pdf", width = 8, height = 6, units = "in")
-#Now to look at the DNA standards
-# 1. Melt the phyloseq object to a long dataframe
-dna_mock_df <- psmelt(psrelabund)
-# Filter for the three DNA standards
-dna_mock_df <- dna_mock_df |>
-  filter(Sample %in% c("48ADNAMCIA", "49ADNAMCIB", "50ADNAMCII")) |>
+print(stats_df)
+# This last command allows you to inspect the regression metrics you have calculated
+# slope, R^2, median log bias, MAE.
+                                                 
+# This last code block is used for any mocks with a logarithmic distribution of taxa.
+# The code assumes your mock is named LogMC
+# You should create a csv file of the expected abundances as before.
+# Read in input values for Mock - i.e. expected abundance
+Log_Mock_RA <- read_csv("LogMockAbundance.csv")
+expected_taxa <- unique(Log_Mock_RA$Genus)
+print(expected_taxa) # check if all good
+
+# Reset the data
+log_mock_df <- psmelt(psrelabund)
+
+# Filter for the log standards
+log_mock_df <- log_mock_df |>
+  filter(Sample == "LogMC") |>
   select(OTU, Sample, sampletype, Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
-
-# 3. Summarize ASV abundances across the three samples (optional: per sample or total)
-# If you want per sample:
-mock_dna_asv_table <- dna_mock_df |>
-  group_by(Sample, OTU, Genus, Species) |>
-  summarise(Abundance = sum(Abundance)) |>
-  arrange(Sample, desc(Abundance))
-
-# 4. View the table
-print(mock_dna_asv_table)
-
-#Read in input values for Mock - i.e. expected abundance
-DNAMockRel <- read_csv("DNAMockAbundance.csv")
-expected_taxa <- unique(DNAMockRel$Genus)
-print(expected_taxa) # all good
-#Join the two dataframes
-Join <- rbind(dna_mock_df, DNAMockRel)
-abund_threshold <- 0.001 # ?
-Join <- Join |>
-  mutate(Genus = ifelse(Abundance < abund_threshold, "Other", Genus))
-Join <- Join |>
-  mutate(Genus = ifelse(is.na(Genus) & Family == "Enterobacteriaceae", "Salmonella (unclassified)", Genus))
-# List your genera as they appear in the plot
-genera_levels <- unique(Join$Genus)
-# New facet label names for Sample Type
-sampletype_names <- list(
-  'Expected'="Expected",
-  'poscontrol'="Observed")
-#Then create a 'labeller' function, and push it into your facet_grid call:
-sampletype_labeller <- function(variable,value){
-  return(sampletype_names[value])
-}
-#Plot the relative abundance side by side
-Join |>
-  filter(Sample != "DNAMockII" & Sample != "50ADNAMCII") |>
-  ggplot(aes(x = Sample, y = Abundance, fill = Genus)) +
-  geom_bar(stat = "identity", position = "Stack", show.legend = TRUE,  width = 0.3, colour = "black") +
-  scale_fill_igv() +
-  labs(title = "Composition of a DNA Mock Community Standard",
-       subtitle = "Data has been filtered to remove spurious ASVs below 0.01% relative abundance",
-       x = "",
-       y = "Relative Abundance") +
-  scale_x_discrete(
-    labels = c(
-      "48ADNAMCIA" = "Replicate I",
-      "49ADNAMCIB" = "Replicate II",
-      "DNAMockI" = "Community Standard I"
-    )
-  ) +
-  theme_bw(base_size = 10) +
-  theme(text = element_text(size = 10),
-        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
-        legend.background = element_blank(),
-        legend.box.background = element_rect(colour = "black"),
-        axis.text.x = element_text(size = 10, face = "bold", angle = 90),
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 10))
-ggsave("DNA_mock_genus.pdf", width = 8, height = 6, units = "in")
-
-# Try a log scale for DNA Mock II as distribution is logarithmic
-# Reset the data as we shouldn't filter the ASVs here
-dna_mock_df <- psmelt(psrelabund)
-# Filter for the three DNA standards
-dna_mock_df <- dna_mock_df |>
-  filter(Sample %in% c("48ADNAMCIA", "49ADNAMCIB", "50ADNAMCII")) |>
-  select(OTU, Sample, sampletype, Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
-Join <- rbind(dna_mock_df, DNAMockRel)
+Join <- rbind(log_mock_df, Log_Mock_RA)
 abund_threshold <- 0.0000000001
 Join <- Join |>
   mutate(Genus = ifelse(Abundance < abund_threshold, "Other", Genus))
-Join <- Join |>
-  mutate(Genus = ifelse(is.na(Genus) & Family == "Enterobacteriaceae", "Salmonella (unclassified)", Genus))
 Join |>
-  filter(Sample == "DNAMockII" | Sample == "50ADNAMCII") |>
   ggplot(aes(x = Sample, y = reorder(Genus, +Abundance), size = Abundance, color = Genus)) +
   geom_point(alpha = 0.8) +
   scale_colour_igv() +
   scale_size_continuous(trans = "log10") +
-  facet_wrap(~sampletype, scales = "free_x", labeller = sampletype_labeller) +
-  scale_x_discrete(
-    labels = c(
-      "50ADNAMCII" = "Community Standard II",
-      "DNAMockII" = "Community Standard II"
-    )
-  ) +
+  facet_wrap(~sampletype, scales = "free_x") +
   labs(title = "Abundance of Genera in a Logarithmic DNA Mock Standard",
-       subtitle = "Sequencing has failed to capture taxa at the lowest level of abundance.",
        caption = "Data has been filtered to remove spurious ASVs below 0.000001% relative abundance",
        y = "Genus", x = "Sample", size = "Abundance (log10)") +
   theme_bw(base_size = 10) +
@@ -852,27 +810,16 @@ Join |>
         legend.background = element_blank(),
         legend.box.background = element_rect(colour = "black"),
         axis.text.x = element_text(size = 10, face = "bold"),
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 10)) +
+        plot.title = element_text(size = 14, face = "bold")) +
   guides(color = "none")
-ggsave("DNA_log_genus.pdf", width = 8, height = 6, units = "in")
-ggsave("DNA_log_genus.png", width = 8, height = 6, dpi = 300)
-# Presence of spurious ASVs extremely low in this sample.
-min_detected_dna <- min(dna_mock_df$Abundance[
-  dna_mock_df$Genus %in% expected_taxa &
-    dna_mock_df$Abundance > 0
+
+# As with dilution series of mock samples, the log sample can be used to determine the minimum detection threshold level
+# this can be used as a defenisble filtering level, at the ASVs at lower abundances are likely to be spurious.
+min_detected_dna <- min(log_mock_df$Abundance[
+  log_mock_df$Genus %in% expected_taxa &
+    log_mock_df$Abundance > 0
 ])
 min_detected_dna
-#[1] 0.0001610436
-
-# Before we move on, let's explore Blastocatella, which was found in the most
-# dilute of the mock samples.
-# On analysis Blastocatella and most of these contaminant sequences only present
-# in this one sample. what does this say about dilute samples? Most prevalence
-# very low, except for Blastocatella. How do we handle biological samples
-# when dilution is extremely low?
-# Many questions here to think about.
-
 ##################################
 #
 # 4. Filtering of the dataset
