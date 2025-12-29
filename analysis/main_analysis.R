@@ -526,9 +526,12 @@ length(get_taxa_unique(ps_decontam_freq, "Genus"))
 # The code block provided allows you to visualise expected v observed relative abundance (RA) in mock samples, but you will
 # need to amend the code block, or add to it, if you have used more than one type of mock (as is recommended).
 # I have also included a block that focuses on analysis of logarithmically distributed mocks.
+
+barplot_threshold <- 0.01
+scatter_threshold <- 0.001
+log_mock_threshold <- 1e-10
                                      
 # First we create some phyloseq objects were counts are transformed into relative abundance (RA)
-psprev <- transform_sample_counts(ps_decontam, function(x) ifelse(x>0, 1, 0))
 psrelabund <- transform_sample_counts(ps_decontam, function(x) x/sum(x))
 psrelabund_unfiltered <- transform_sample_counts(bac_physeq, function(x) x/sum(x))
 # 4.1 Expected vs observed composition (barplots)
@@ -537,7 +540,7 @@ df <- psmelt(psrelabund)
 
 # 2. Select only your mock samples
 mock_df <- df |>
-  filter(mock_column %in% mock_labels) |>
+  filter(.data[[mock_column]] %in% mock_labels) |>
   select(OTU, Sample, sampletype, Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
 
 # 3. Summarize ASV abundances across your samples (per sample)
@@ -557,11 +560,13 @@ expected_taxa <- unique(Mock_Expected_RA$Genus)
 print(expected_taxa) # to check if all looks correct
                                                  
 #Join the two dataframes
-Join <- rbind(mock_df, Mock_Expected_RA)
-abund_threshold <- 0.01 # 1%
-
+Join <- dplyr::bind_rows(
+  mock_df |> mutate(Source = "Observed"),
+  Mock_Expected_RA |> mutate(Source = "Expected")
+)
 Join <- Join |>
-  mutate(Genus = ifelse(Abundance < abund_threshold, "Other", Genus))
+  mutate(Genus = ifelse(Abundance < barplot_threshold, "Other", Genus))
+# Expected taxa below the plotting threshold are grouped as ‘Other’ and treated as unexpected for visualisation.
 Join <- Join |>
   mutate(Expected = ifelse(Genus %in% expected_taxa, "Expected", "Unexpected"))
 # List your genera as they appear in the plot
@@ -686,9 +691,8 @@ mock_taxa <- exp_df$Canonical
 
 # Optional: filter to keep all mock taxa + non-mock >= 0.1% (0.001 threshold)
 # Threshold used only to collapse low-abundance taxa for visual clarity
-thr <- 0.001
 comp_filt <- comp |>
-  filter(Canonical %in% mock_taxa | pmax(exp, obs) >= thr)
+  filter(Canonical %in% mock_taxa | pmax(exp, obs) >= scatter_threshold)
 
 # flags for plotting
 comp_filt <- comp_filt |>
@@ -723,7 +727,7 @@ stats_df <- comp3 |>
     )
   }) |>
   ungroup() |>
-  # round
+  # round and build facet-strip labels with sample info
   mutate(
     slope    = round(slope, 2),
     r2       = round(r2, 2),
@@ -732,7 +736,7 @@ stats_df <- comp3 |>
   )
 
 # named vector for facet labels
-lab_map <- setNames(stats_df$strip_lab, stats_df$Sample)
+lab_map <- setNames(stats_df$Sample)
 
 # plot
 p1 <- ggplot(comp3, aes(pmax(exp, eps), pmax(obs, eps))) +
@@ -795,9 +799,8 @@ log_mock_df <- log_mock_df |>
   filter(Sample == "LogMC") |>
   select(OTU, Sample, sampletype, Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
 Join <- rbind(log_mock_df, Log_Mock_RA)
-abund_threshold <- 0.0000000001
 Join <- Join |>
-  mutate(Genus = ifelse(Abundance < abund_threshold, "Other", Genus))
+  mutate(Genus = ifelse(Abundance < log_mock_threshold, "Other", Genus))
 Join |>
   ggplot(aes(x = Sample, y = reorder(Genus, +Abundance), size = Abundance, color = Genus)) +
   geom_point(alpha = 0.8) +
