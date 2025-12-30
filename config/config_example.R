@@ -46,7 +46,7 @@ chloroplast_label  <- "Chloroplast"
 
 
 # ----------------------------
-# Negative controls (for decontam)
+# Controls (neg for decontam, and mocks)
 # ----------------------------
 
 # Column in metadata identifying control samples
@@ -60,14 +60,16 @@ negative_control_labels <- c(
   "PBS"
 )
 
+# Values corresponding to mock communities
+mock_labels <- c(
+  "Positive control",
+  "Mock",
+  "LogMC"
+)
+
 # If using DNA concentration for frequency-based decontam
 # set column name here; otherwise leave as NULL
 dna_concentration_column <- NULL
-
-
-# ----------------------------
-# Mock community samples
-# ----------------------------
 
 # Expected relative abundance for standard mock
 mock_expected_path <- "data/mock_expected_abundance.csv"
@@ -77,16 +79,6 @@ log_mock_expected_path <- "data/log_mock_expected_abundance.csv"
 
 # Name of logarithmic mock sample (if present)
 log_mock_sample <- "LogMC"
-
-# Column in metadata identifying mock samples
-mock_column <- "sampletype"
-
-# Values corresponding to mock communities
-mock_labels <- c(
-  "Positive control",
-  "Mock",
-  "LogMC"
-)
 
 # ----------------------------
 # Diversity analysis settings
