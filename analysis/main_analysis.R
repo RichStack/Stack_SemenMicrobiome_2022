@@ -520,7 +520,7 @@ length(get_taxa_unique(ps_decontam_freq, "Genus"))
 #######################################################################
 # For this part of the analysis, you will need to have a csv file containing the expected composition of any mock communities that
 # you have included in your run. Important: Your csv file should contain these fields, which will allow you to bind with your phyloseq object.
-# (OTU, Sample, .data[[mock_column]], Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
+# (OTU, Sample, .data[[control_column]], Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
 # In the example below, the Sample field is given a value of `Expected` 
 # As stated earlier, you can use a combination of cell and DNA mocks.
 # The code block provided allows you to visualise expected v observed relative abundance (RA) in mock samples, but you will
@@ -540,8 +540,8 @@ df <- psmelt(psrelabund)
 
 # 2. Select only your mock samples
 mock_df <- df |>
-  filter(.data[[mock_column]] %in% mock_labels) |>
-  select(OTU, Sample, .data[[mock_column]], Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
+  filter(.data[[control_column]] %in% mock_labels) |>
+  select(OTU, Sample, .data[[control_column]], Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
 
 # 3. Summarize ASV abundances across your samples (per sample)
 mock_asv_table <- mock_df |>
@@ -798,7 +798,7 @@ log_mock_df <- psmelt(psrelabund)
 # Filter for the log standards
 log_mock_df <- log_mock_df |>
   filter(Sample == log_mock_sample) |>
-  select(OTU, Sample, .data[[mock_column]], Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
+  select(OTU, Sample, .data[[control_column]], Abundance, Kingdom, Phylum, Class, Order, Family, Genus, Species)
 Join <- rbind(log_mock_df, Log_Mock_RA)
 Join <- Join |>
   mutate(Genus = ifelse(Abundance < log_mock_threshold, "Other", Genus))
@@ -807,7 +807,7 @@ Join |>
   geom_point(alpha = 0.8) +
   scale_colour_igv() +
   scale_size_continuous(trans = "log10") +
-  facet_wrap(~.data[[mock_column]], scales = "free_x") +
+  facet_wrap(~.data[[control_column]], scales = "free_x") +
   labs(title = "Abundance of Genera in a Logarithmic DNA Mock Standard",
        caption = "Data has been filtered to remove spurious ASVs below 0.000001% relative abundance",
        y = "Genus", x = "Sample", size = "Abundance (log10)") +
@@ -876,134 +876,68 @@ ggplot(prevdf3, aes(TotalAbundance, Prevalence / nsamples(ps_filtered),color=Phy
         plot.title = element_text(size = 14, face = "bold"),
         plot.subtitle = element_text(size = 10),
         legend.position = "none")
-
-# Lets go back to the dataframe and remove the blank and the mocks
-genus_physeq <- subset_samples(ps_filtered,
-                               !(sample_names(ps_filtered) %in% c("47ANC",
-                                                                 "48ADNAMCIA",
-                                                                 "49ADNAMCIB",
-                                                                 "50ADNAMCII",
-                                                                 "51ACELLMC8",
-                                                                 "52ACELLMC5",
-                                                                 "53ACELLMC3")))
-sample_names(genus_physeq)
-nsamples(genus_physeq)
-genus_physeq_rel <- subset_samples(ps_rel_filtered,
-                                   !(sample_names(ps_rel_filtered) %in% c("47ANC",
-                                                                      "48ADNAMCIA",
-                                                                      "49ADNAMCIB",
-                                                                      "50ADNAMCII",
-                                                                      "51ACELLMC8",
-                                                                      "52ACELLMC5",
-                                                                      "53ACELLMC3")))
-sample_names(genus_physeq_rel)
-nsamples(genus_physeq_rel) #46
-ntaxa(genus_physeq_rel) # 585
+# Combine the neg and mock control labels
+control_labels <- c(mock_labels, negative_control_labels)
+# Use this to subset
+final_physeq <- subset_samples(
+  ps_filtered,
+  !(get(control_column) %in% control_labels)
+)
+# Sanity check
+nsamples(final_physeq)
+sample_names(final_physeq)
+# Repeat for the RA object
+final_rel_physeq <- subset_samples(
+  ps_rel_filtered,
+  !(get(control_column) %in% control_labels)
+)
 filtered_df <- filtered_df |>
-  filter(sampletype != "poscontrol" & sampletype != "negcontrol") 
+  dplyr::filter(!(.data[[control_column]] %in% control_labels))
 
-# Lets try to look at the raw counts in my original phyloseq object
-nb_samples <- dim(genus_physeq@otu_table)[2] # nb of cols, here samples
-nb_samples # 46
-nb_features <- dim(genus_physeq@otu_table)[1] # number of rows, here variables (OTU)
-nb_features # 585
-length(get_taxa_unique(genus_physeq, "Genus")) #194
-# Pruning contaminants and the blank has now worked
+# Inspect the counts in the final phyloseq object
+nb_samples  <- nsamples(final_physeq)
+nb_samples
+nb_features <- ntaxa(final_physeq)
+nb_features
+length(get_taxa_unique(genus_physeq, "Genus"))
+# This should tell you whether pruning contaminants, filtering, removing mocks and the blank has worked
 
-# First consider zeros - i.e. a measure of sparsity in the data-set
-sum(genus_physeq@otu_table == 0) # 24499
-sum(genus_physeq@otu_table== 0) / (nb_features * nb_samples) * 100
-# 91%
-# So there are 24499 zeros in the dataset, which represents about
-# 91% of all the features in the sample.
+# Following filtering you should consider zero ASV counts - i.e. a measure of sparsity in the data-set
+sum(as(otu_table(final_physeq), "matrix") == 0)
+sum(as(otu_table(final_physeq), "matrix") == 0) / (nb_features * nb_samples) * 100
+# This shows number of zero ASV counts (ASVs that do not appear in a sample)
+# And the percentage represents the proportion of ASVs in the dataset are zero count ASVs                                           
+
 # A zero may mean that this feature is not present in a sample,
-# Or it may mean that sequencing depth was inadequate - which is likely in some.
-# some of the low depth samples
+# Or it may mean that sequencing depth was inadequate
 
 # Create a matrix of the otu table
-mat <- t(otu_table(genus_physeq))
+mat <- t(otu_table(final_physeq))
 class(mat) <- "matrix"
 class(mat)
 #> [1] "matrix" "array"
 
 # What is the minimum total count over all samples per OTU in this data set?
 min(colSums(mat))
-# 0
 non_zero <- 0*1:nb_features
 
 for (i in 1:nb_features){
-  non_zero[i]<-sum(genus_physeq@otu_table[i, ] != 0)
+  non_zero[i]<-sum(final_physeq@otu_table[i, ] != 0)
 }
 
 plot(non_zero, xlab = "Unique ASVs", ylab = "Frequency of Samples (n)", 
-     main = "Frequency of Non-Zero ASV occurrences in Genus_16S dataset, by sample.", las = 1)
+     main = "Frequency of Non-Zero ASV occurrences in dataset, by sample.", las = 1)
 
-# Most of the ASVs only appear in one sample of the 46. Very few are shared.
-
-# Now to plot sample counts
-sum_seq <- rowSums(mat)
-plot(sum_seq, ylim=c(0,60000), main=c("Number of counts per sample"), 
-     xlab=c("Samples"), ylab = c("Read count(n)"))
-sum_seq
-min(sum_seq)
-max(sum_seq)
-# Immediately this shows me that several of the samples - especially 0086K
-# have drastically been reduced in read size following filtering and decontamination.
-# This is very likely because they had an extremely low depth to begin with.
-# I should go back to the original phyloseq object and prune more
-# selectively
-# If I exclude samples with a depth of less than 1000 I will lose 
-# 14A0282K 489
-# 20A0086K 268
-# 33A9563K 572
-# 36A0874K 945
-# 37A9393H 263
-# 39A9968H 536
-# 42A0118K 338
-# Then if we set the cutoff at 2000 depth this also includes
-# 22A9549H
-# 30A0433K
-# 50A2594K
-# Of the biological samples - the highest is 6A 0161K with 50,407
-# About a 3 fold change between lowest and highest sample size
-# NB The outlier in beta-diversity plots - once low depth samples are removed is:
-# 28A0839K - 3825 depth - not the next lowest, but still low.
-# We could consider making some binned categories later when performing beta diversity of 
-# low depth samples,
-# Data needs to be normalised in future analysis (log for beta, relative abundance for bar plots)
-# Let's make some more visually appealing plots
-sample_sums_df <- data.frame(SampleID = sample_names(genus_physeq),
-                             ReadCount = sample_sums(genus_physeq),
-                             sampletype = sample_data(genus_physeq)$sampletype)
-histcount <- ggplot(sample_sums_df, aes(x = ReadCount)) +
-  geom_histogram(aes(fill = sampletype),bins = 30, color = "black") +
-  geom_vline(xintercept = 2000, linetype = "dashed", color = "black") +
-  annotate("text", x = 2100, y = 11.5, label = "Rarefaction threshold (2000)", hjust = 0, size = 2) +
-  labs(title = "Distribution of Sample Read Counts",
-       subtitle = "X intercept represents sample depth threshold",
-       x = "Total ASV Counts per Sample", y = "Number of Samples",
-       fill = "Sample Type") +
-  scale_fill_npg(label = c("Boar Swab", "Extender", "Glove swab", "Boar Semen")) +
-  theme_bw(base_size = 10) +
-  theme(text = element_text(size = 7),
-        plot.margin = ggplot2::margin(0.5, 1, 1, 1, "cm"),
-        axis.text.x = element_text(size = 6, face = "bold", angle = 90),
-        plot.title = element_text(size = 10, face = "bold"),
-        plot.subtitle = element_text(size = 7),
-        legend.text = element_text(size = 6))
-ggsave("Read_count_distrib_post_filtering.pdf",width = 8, height = 6, units = "in")
 # Generate rarefaction curves with ggrare
 library(ranacapa)
-rarecount <- ggrare(genus_physeq, step = 100, color = "sampletype", se = FALSE) +
-  geom_vline(xintercept = 2000, linetype = "dashed", color = "orange") +
+rarecount <- ggrare(final_physeq, step = 100, se = FALSE) +
+  # geom_vline(xintercept = 2000, linetype = "dashed", color = "orange") + # use this if want to display a potential depth-threshold
   labs(
     title = "Alpha Rarefaction Curves",
     subtitle = "Rarefied at incremental steps; vertical line = 2000 read cutoff",
     x = "Sequencing Depth",
-    y = "Observed ASVs",
-    color = "Sample Type"
+    y = "Observed ASVs"
   ) +
-  scale_colour_discrete(label = c("Boar Swab", "Extender", "Glove swab", "Boar Semen")) +
   theme_bw(base_size = 10) +
   theme(text = element_text(size = 7),
     plot.title = element_text(face = "bold", size = 10),
@@ -1012,24 +946,56 @@ rarecount <- ggrare(genus_physeq, step = 100, color = "sampletype", se = FALSE) 
     axis.text = element_text(size = 7, angle = 90),
     legend.text = element_text(size = 6)
   )
-rarecount <- rarecount + guides(shape = guide_legend(override.aes = list(size = 1)),
-                                color = guide_legend(override.aes = list(size = 1))) +
-  theme(legend.title = element_text(size = 6),
-        legend.text = element_text(size = 6))
 rarecount
-histcount <- histcount + guides(shape = guide_legend(override.aes = list(size = 1)),
-                               fill = guide_legend(override.aes = list(size = 1))) +
-  theme(legend.title = element_text(size = 6), 
+# This plot should illustrate whether you have achieved suitable sequencing depth in the samples.
+# The count at which the samples curves plateau is considered to be a suitable depth - and could be considered the lowest threshold for depth.
+# Make a note, replot with the geom_vline command amended to include your threshold. This number should inform the next plot.
+
+# Now to plot sample counts
+sum_seq <- rowSums(mat)
+plot(sum_seq, ylim=c(0,60000), main=c("Number of counts per sample"), 
+     xlab=c("Samples"), ylab = c("Read count(n)"))
+sum_seq
+min(sum_seq)
+max(sum_seq)
+# This is a quick visualisation to check whether any of the samples have drastically been reduced in read size 
+# following filtering and decontamination.
+# This is especially important in host-associated low-microbial-biomass datasets which mayu be low depth to begin with.
+
+# Data needs to be normalised in future analysis (log for beta, relative abundance for bar plots)
+# Let's make some more visually appealing plots
+sample_sums_df <- data.frame(SampleID = sample_names(final_physeq),
+                             ReadCount = sample_sums(final_physeq))
+histcount <- ggplot(sample_sums_df, aes(x = ReadCount)) +
+  geom_histogram(aes(),bins = 30, color = "black") +
+  # geom_vline(xintercept = 2000, linetype = "dashed", color = "black") + # use this to indicate a potential cut-off for sequencing depth
+  # annotate("text", x = 2100, y = 11.5, label = "Rarefaction threshold (2000)", hjust = 0, size = 2) +
+  labs(title = "Distribution of Sample Read Counts",
+       subtitle = "X intercept represents sample depth threshold",
+       x = "Total ASV Counts per Sample", y = "Number of Samples") +
+  scale_fill_npg() +
+  theme_bw(base_size = 10) +
+  theme(text = element_text(size = 7),
+        plot.margin = ggplot2::margin(0.5, 1, 1, 1, "cm"),
+        axis.text.x = element_text(size = 6, face = "bold", angle = 90),
+        plot.title = element_text(size = 10, face = "bold"),
+        plot.subtitle = element_text(size = 7),
         legend.text = element_text(size = 6))
 histcount
-combined_plot <- rarecount + histcount + plot_layout(nrow = 2)
-combined_plot
-ggsave("Combined_Rarefaction_Histogram.png", combined_plot, width = 6, height = 8, dpi = 300)
-ggsave("Combined_Rarefaction_Histogram.pdf", combined_plot, width = 6, height = 8)
+# Overall this combination of plots should tell you whether you have any samples that should be pruned from the dataset owning to low depth
+# And your histogram of sample counts will give you an idea of how many samples you might loose based on the depth pruning.
+# Once you have made your decision proceed with the optional pruning command:
 
-# For now avoid rarefaction as this is contentious. I have made a vector of low
-# depth samples, in case I want to remove these easily from future aspects
-# of the analysis.
+# Remove low-depth samples up front
+# low_depth_samples <- sample_names(final_physeq)[sample_sums(genus_physeq) < 2000]
+# final_physeq_no_outliers <- subset_samples(final_physeq, !(sample_names(final_physeq) %in% low_depth_samples))
+# Metadata_no_outliers <- Metadata %>% filter(!(sampleid %in% low_depth_samples))
+
+# If you have pruned wisely, you will find that there is little difference in the following counts prior to pruning.
+# ntaxa(final_physeq_no_outliers)
+# length(get_taxa_unique(final_physeq_no_outliers, "Genus"))
+
+                                                 
 ###################################################################
 #
 # Section 5: Alpha diversity metrics
