@@ -827,36 +827,34 @@ min_detected_dna <- min(log_mock_df$Abundance[
     log_mock_df$Abundance > 0
 ])
 min_detected_dna
-##################################
-#
-# 4. Filtering of the dataset
-#
-#######################################################################
+#######################################
+# SECTION 5: Final Prevalence Filtering
+########################################
 
-# Using the mocks as a way to determine the minimum detection threshold.
+# If you have included mocks in your run then you can use the analysis above to determine the minimum detection threshold.
+# For the purposes of this workflow I have specified a threshold based on the minimum detection thresholds calcyulated from
+# one of my own datasets, but you should amend this figure to reflect your own dataset.
 mock_abund_threshold <- 0.00014
+# Use this threshold to create a filtered dataframe of all samples and filtered phyloseq objects.
 filtered_df <- df[df$Abundance >= mock_abund_threshold, ]
 # Identify taxa to keep
 keep_taxa <- taxa_names(psrelabund)[taxa_sums(psrelabund) >= mock_abund_threshold * nsamples(psrelabund)]
-ps_filtered <- prune_taxa(keep_taxa, ps.noncontam)
+ps_filtered <- prune_taxa(keep_taxa, ps_decontam)
 ps_rel_filtered <- transform_sample_counts(ps_filtered, function(x) x / sum(x))
+# Compare number of ASVs before and after filtering
+ntaxa(bac_physeq)
+ntaxa(ps_decontam)
 ntaxa(ps_filtered)
-# 585
-ntaxa(ps_rel_filtered)
-# 585
+# Note number of genera
 length(get_taxa_unique(ps_filtered, "Genus"))
-length(get_taxa_unique(ps_rel_filtered, "Genus"))
-# 194
-# Let's visualise the phyla again.
+# Let's visualise the phyla.
 # Result: a vector with one value per ASV.
 prevdf2 = apply(X = otu_table(ps_filtered),
                MARGIN = ifelse(taxa_are_rows(ps_filtered), yes = 1, no = 2),
                FUN = function(x){sum(x > 0)})
-
 # Now you create a data.frame where each row is an ASV and columns include:
 # Prevalence = number of samples where ASV is present
 # TotalAbundance = total read count across all samples
-# tax_table(ps0) = adds taxonomy data for each ASV
 # Add taxonomy and total read counts to this data.frame
 prevdf2 = data.frame(Prevalence = prevdf2,
                     TotalAbundance = taxa_sums(ps_filtered),
@@ -866,13 +864,11 @@ plyr::ddply(prevdf2, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$
 # Subset to the remaining phyla
 prevdf3 = subset(prevdf2, Phylum %in% get_taxa_unique(ps_filtered, "Phylum"))
 ggplot(prevdf3, aes(TotalAbundance, Prevalence / nsamples(ps_filtered),color=Phylum)) +
-  # Include a guess for parameter
-  # geom_hline(yintercept = 0.05, alpha = 0.5, linetype = 2) + 
   geom_point(size = 2, alpha = 0.7) +
   scale_x_log10() +  xlab("Total Abundance") + ylab("Prevalence [Frac. Samples]") +
   facet_wrap(~Phylum) +
-  labs(title = "Prevalence versus total counts of ASVs in Genus Amplicon dataset",
-       subtitle = "Dataset has been filtered of contaminants and low prevalence ASVs") +
+  labs(title = "Prevalence versus total counts of ASVs",
+       subtitle = "Dataset has been filtered to remove contaminants and low prevalence ASVs") +
   theme_bw(base_size = 10) +
   theme(text = element_text(size = 10),
         plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
@@ -880,31 +876,8 @@ ggplot(prevdf3, aes(TotalAbundance, Prevalence / nsamples(ps_filtered),color=Phy
         plot.title = element_text(size = 14, face = "bold"),
         plot.subtitle = element_text(size = 10),
         legend.position = "none")
-ggsave("Phyla_ASV_prevalence_post_filter.png", width = 8, height = 6, dpi = 300)
-ggsave("Phyla_ASV_prevalence_post_filter.pdf", width = 8, height = 6, units = "in")
-# The phyla are interesting in that of campylobacter - not seen in other semen'
-# datasets of mine - these are plausible in animal subjects, helicobacter and
-# campylobacter (the most prevalent genus) are found in intestines of boar and
-# are associated with pathogenic infection of the reproductive tract.
-# Chloroflexi have been found in human and animal intestinal samples again
-# and may not be out of place - its just unknown.
-# Of Cyanobacteria - Sericytochromatia has been found in gut samples.
-# Desulfovibrio - intestinal
-# Fusobacteriota are low prevalence but very relevant to habitat.
-# Myxococcota - potentially intestinal but v unclear - also v low prev.
-# Patescibacteria - related to oral microbiome.
-# Spirochaetota almost all Treponema genus, and are commonly found in boar. 
 
-######################################################################
-# Section 4 Final prevalence filtering
-######################################################################
-ntaxa(ps.noncontam)
-# 1753
-ntaxa(ps_filtered)
-# 585
-# Lets go back to the dataframe.
-# First I should remove the blank and the mocks
-sample_names(ps_filtered)
+# Lets go back to the dataframe and remove the blank and the mocks
 genus_physeq <- subset_samples(ps_filtered,
                                !(sample_names(ps_filtered) %in% c("47ANC",
                                                                  "48ADNAMCIA",
