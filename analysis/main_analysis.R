@@ -1,7 +1,5 @@
 #####################
-# 
 #  Notes on the origin of this script
-#
 #####################
 # This script has been adapted from a script written to handle 16S rRNA amplicon data (V3-V4 region).
 # Original sample type: boar semen - but could be used for any low-microbial biomass type sample data.
@@ -20,9 +18,7 @@
 # Additional controls that could be included, but are not present in the workflow are
 # spike-in controls - these are used to estimate absolute microbial quantity.
 ####################################################################
-#
 # Original pre-processing steps
-#
 ####################################################################
 # Proceeding this script, a shell-script preprocessing Qiime2 workflow was used to: 
 # Trim primers and adapters with the cutadapt plugin.
@@ -1003,18 +999,18 @@ histcount
 # Alpha and Beta Diversity
 # 5.1 Using Vegan to caluclate alpha diversity
 
-# This commented codeblock gives an example of creating read-depth bins.
+# This codeblock gives an example of creating read-depth bins.
 # This might be useful if you have experienced low depth across samples, and want to investigate the impact of this on
 # any diversity metrics. The actual bins you choose should be dependent on your own data. 
 # Get total read counts per sample (after host removal)
-# read_depth <- sample_sums(semen_physeq)
-# read_depth
+read_depth <- sample_sums(final_physeq)
+read_depth
 # Add to sample_data
-# sample_data(final_physeq)$read_depth <- read_depth
-# sample_data(final_physeq)$depth_binned <- cut(sample_data(final_physeq)$read_depth,
+sample_data(final_physeq)$read_depth <- read_depth
+sample_data(final_physeq)$depth_binned <- cut(sample_data(final_physeq)$read_depth,
                                                       breaks = c(2000, 5000, 10000, 60000))
-# Metadata$read_depth <- sample_data(final_physeq)$read_depth
-# Metadata$depth_binned <- sample_data(final_physeq)$depth_binned
+Metadata$read_depth <- sample_data(final_physeq)$read_depth
+Metadata$depth_binned <- sample_data(final_physeq)$depth_binned
 
 # Calculate alpha diversity metrics
 otu <- t(otu_table(final_physeq))
@@ -1032,52 +1028,52 @@ alpha_df <- Metadata |>
   )
 
 # Correlations of alpha diversity with example technical covariates
-# ggplot(alpha_df, aes(x = read_depth, y = Chao1)) +
-#  geom_point() +
-#  geom_smooth(method = "lm", color = "black", linetype = "dashed") +
-#  labs(title = "Relationship Between Sequencing Depth and Alpha Diversity",
-#       x = "Sample Read Count",
-#       y = "Chao1 Index") +
-#  stat_cor(method = "pearson", label.x = 3000, label.y = 120) +
-#  theme_bw(base_size = 10) +
-#  theme(text = element_text(size = 10),
-#        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
-#        plot.title = element_text(size = 12, face = "bold"),
-#        plot.subtitle = element_text(size = 10))
+ggplot(alpha_df, aes(x = read_depth, y = Chao1)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "black", linetype = "dashed") +
+  labs(title = "Relationship Between Sequencing Depth and Alpha Diversity",
+       x = "Sample Read Count",
+       y = "Chao1 Index") +
+  stat_cor(method = "pearson", label.x = 3000, label.y = 120) +
+  theme_bw(base_size = 10) +
+  theme(text = element_text(size = 10),
+        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
+        plot.title = element_text(size = 12, face = "bold"),
+        plot.subtitle = element_text(size = 10))
 # Include a correlation test to check for over-fitting
-# cor.test(alpha_df$Chao1, alpha_df$read_depth) 
+cor.test(alpha_df$Chao1, alpha_df$read_depth) 
 
 # NB If you have used a dada2 denoising workflow, then it is likely that Chao1 and S.obs/richness will report the same results 
 # in your dataset because it will contain no singleton observations. 
 
 # The following code-block will produce comparative boxplots based on any metadata variable you wish to test for differences 
 # in alpha diversity. The metadata variable you choose is defined in the config.R file
-P1 <- ggplot(alpha_df, aes(x = met_var, y = S.obs)) +
-  geom_boxplot(aes(fill = met_var)) +
+P1 <- ggplot(alpha_df, aes(x = .data[[met_var]], y = S.obs)) +
+  geom_boxplot(aes(fill = .data[[met_var]])) +
   geom_point(size = 1, alpha = 0.7) +
   stat_compare_means(method = "wilcox.test", label = "p.format", label.y = 120) +
   labs(title = 'Observed Richness (S.obs)', x = '', y = '', tag = "A") +
   theme_bw(base_size = 10) +
   theme(legend.position = "none")
 
-P2 <- ggplot(alpha_df, aes(x = met_var, y = Chao1)) +
-  geom_boxplot(aes(fill = met_var)) +
+P2 <- ggplot(alpha_df, aes(x = .data[[met_var]], y = Chao1)) +
+  geom_boxplot(aes(fill = .data[[met_var]])) +
   geom_point(size = 1, alpha = 0.7) +
   stat_compare_means(method = "wilcox.test", label = "p.format", label.y = 120) +
   labs(title= 'Chao1', x= ' ', y= '', tag = "B") +
   theme_bw(base_size = 10) +
   theme(legend.position = "none")
 
-P3 <- ggplot(alpha_df, aes(x = met_var, y = Pielou$shannon)) +
-  geom_boxplot(aes(fill = met_var)) +
+P3 <- ggplot(alpha_df, aes(x = .data[[met_var]], y = Pielou$shannon)) +
+  geom_boxplot(aes(fill = .data[[met_var]])) +
   geom_point(size = 1, alpha = 0.7) +
   stat_compare_means(method = "wilcox.test", label = "p.format", label.y = 0.7) +
   labs(title= 'Evenness (Pielou)', x= ' ', y= '', tag = "C") +
   theme_bw(base_size = 10) +
   theme(legend.position = "none")
 
-P4 <- ggplot(alpha_df, aes(x = met_var, y = Shannon$shannon)) +
-  geom_boxplot(aes(fill = met_var)) +
+P4 <- ggplot(alpha_df, aes(x = .data[[met_var]], y = Shannon$shannon)) +
+  geom_boxplot(aes(fill = .data[[met_var]])) +
   geom_point(size = 1, alpha = 0.7) +
   stat_compare_means(method = "wilcox.test", label = "p.format", label.y = 2.0) +
   labs(title= 'Shannon', x= ' ', y= '', tag = "D") +
@@ -1117,13 +1113,15 @@ qplot(log10(rowSums(otu_table(final_physeq)))) +
 pslog <- transform_sample_counts(final_physeq, function(x) log(1 + x))
 
 # Explore relatedness of all niches
-psord <- ordinate(pslog, method = "PCoA", distance = "wunifrac")
+psord <- ordinate(pslog, method = "PCoA", distance = beta_distance)
 psevals <- psord$values$Eigenvalues
-psord_df <- plot_ordination(pslog, psord, color = "met_var", justDF = TRUE)
+psord_df <- plot_ordination(pslog, psord, justDF = TRUE)
+psord_df[[met_var]] <- sample_data(pslog)[[met_var]]
+
 psord_df$label <- ifelse(psord_df$Axis.1 < -0.08, rownames(psord_df), NA) # label only outliers
 pc1_var <- round(100 * psevals[1] / sum(psevals), 1)
 pc2_var <- round(100 * psevals[2] / sum(psevals), 1)
-wuni <- ggplot(psord_df, aes(x = Axis.1, y = Axis.2, color = met_var)) +
+wuni <- ggplot(psord_df, aes(x = Axis.1, y = Axis.2, color = .data[[met_var]])) +
   geom_point(size = 2, alpha = 0.9) +
   labs(x = paste0("PCoA 1 (", pc1_var, "%)"),
        y = paste0("PCoA 2 (", pc2_var, "%)"),
@@ -1136,18 +1134,26 @@ wuni <- ggplot(psord_df, aes(x = Axis.1, y = Axis.2, color = met_var)) +
         plot.margin = ggplot2::margin(0.5, 0.5, 0.5, 0.5, "cm"),
         axis.text = element_text(size = 7, angle = 90),
         legend.text = element_text(size = 10))
-wuniall
+wuni
 # This plot will label any outlier samples
 
 # Performing a PERMANOVA.
-adonis2(distance(pslog, method = "wunifrac") ~ met_var,
-        data = as(sample_data(pslog), "data.frame"),by = "margin")
+adonis_formula <- as.formula(
+  paste("distance(pslog, method = beta_distance) ~", met_var)
+)
+
+adonis2(
+  adonis_formula,
+  data = as(sample_data(pslog), "data.frame"),
+  by = "margin"
+)
+
 # You should explore additional variables and include technical co-variates in these permanovas - in order to check that
 # any observed significance isn't explained by depth / batch effects etc.
 # Also, avoid over-fitting of data.                                 
 
 # Here I give an example where I have included read_depth into the PCoA.
-wuni_depth <- ggplot(psord_df, aes(x = Axis.1, y = Axis.2, colour=met_var, size = read_depth)) +
+wuni_depth <- ggplot(psord_df, aes(x = Axis.1, y = Axis.2, colour=.data[[met_var]], size = read_depth)) +
   geom_point(alpha = 0.9) +
   labs(x = paste0("PCoA 1 (", pc1_var, "%)"),
        y = paste0("PCoA 2 (", pc2_var, "%)"),
@@ -1155,7 +1161,7 @@ wuni_depth <- ggplot(psord_df, aes(x = Axis.1, y = Axis.2, colour=met_var, size 
        caption = "Data has been normalised through log transformation",
        size = "Read Depth") +
   ggrepel::geom_text_repel(aes(label = label), size = 3, na.rm = TRUE) +
-  scale_color_observable() +
+  scale_color_igv() +
   coord_fixed(sqrt(psevals[2] / psevals[1])) +
   theme_bw(base_size = 10) +
   theme(text = element_text(size = 10),
@@ -1167,8 +1173,18 @@ wuni_depth <- ggplot(psord_df, aes(x = Axis.1, y = Axis.2, colour=met_var, size 
 wuni_depth
 
 # Check stats
-adonis2(distance(pslog, method = "wunifrac") ~ met_var + read_depth,
-        data = as(sample_data(pslog), "data.frame"),by = "margin")
+adonis_formula <- as.formula(
+  paste(
+    "distance(pslog, method = beta_distance) ~",
+    paste(c(met_var, "read_depth"), collapse = " + ")
+  )
+)
+
+adonis2(
+  adonis_formula,
+  data = as(sample_data(pslog), "data.frame"),
+  by = "margin"
+)
 
 # Alternative method using CLR
 library(microbiome)
@@ -1176,8 +1192,6 @@ library(microbiome)
 rel_abund <- microbiome::transform(pslog, "compositional")
 # Apply CLR transformation
 clr_phy <- microbiome::transform(rel_abund, "clr")
-# calculate Euclidean distances
-clr_dist <- dist(t(otu_table(clr_phy)))
 # Extract CLR-transformed counts and make sure rows = samples
 clr_matrix <- as(otu_table(clr_phy), "matrix")
 if (taxa_are_rows(clr_phy)) {
@@ -1196,7 +1210,7 @@ metadata$SampleID <- rownames(metadata)
 pca_df <- merge(pca_df, metadata, by = "SampleID")
 
 # Plot
-ggplot(pca_df, aes(x = PC1, y = PC2, color = met_var)) +
+ggplot(pca_df, aes(x = PC1, y = PC2, color = .data[[met_var]])) +
   geom_point(aes(size = read_depth), alpha = 0.8) +
   scale_size_continuous(name = "Read depth") +
   scale_color_igv() +
