@@ -84,12 +84,11 @@ log_mock_sample <- "LogMC"
 # Diversity analysis settings
 # ----------------------------
 
-# Rarefaction depth (set to NULL to skip rarefaction)
-rarefaction_depth <- NULL
-
 # Distance metric for beta diversity
 beta_distance <- "wunifrac"
 
+# Metadata variable to test
+met_var <- "sampletype"
 
 # ----------------------------
 # Plotting defaults
