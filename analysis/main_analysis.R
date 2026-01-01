@@ -991,152 +991,93 @@ histcount
 # final_physeq_no_outliers <- subset_samples(final_physeq, !(sample_names(final_physeq) %in% low_depth_samples))
 # Metadata_no_outliers <- Metadata %>% filter(!(sampleid %in% low_depth_samples))
 
-# If you have pruned wisely, you will find that there is little difference in the following counts prior to pruning.
+# If you have pruned wisely, you will find that there is little difference between the following counts and those made prior to pruning.
 # ntaxa(final_physeq_no_outliers)
 # length(get_taxa_unique(final_physeq_no_outliers, "Genus"))
-
-                                                 
+# final_physeq <- final_physeq_no_outliers
+                                             
 ###################################################################
-#
-# Section 5: Alpha diversity metrics
-#
+# SECTION 5: Diversity analysis
 ###################################################################
 
 # Alpha and Beta Diversity
-# Using Vegan to caluclate alpha diversity
-# Remove low-depth samples up front
-low_depth_samples <- sample_names(genus_physeq)[sample_sums(genus_physeq) < 2000]
-# This will remove 10 semen samples. Not ideal. Could set bar higher in terms of depth
-# but there will be a trade of with a much greater number of samples being pruned.
-genus_physeq_no_outliers <- subset_samples(genus_physeq, !(sample_names(genus_physeq) %in% low_depth_samples))
-Metadata_no_outliers <- Metadata %>% filter(!(sampleid %in% low_depth_samples))
-# Subset to semen samples only
-ntaxa(genus_physeq_no_outliers)
-# Still 585
-length(get_taxa_unique(genus_physeq_no_outliers, "Genus"))
-# Still 194
-semen_physeq <- subset_samples(genus_physeq_no_outliers, sampletype == "semen")
-Metadata_semen <- Metadata_no_outliers %>% filter(sampletype == "semen")
-# Add a metadata column for semen concentration -binned to make it categorical
-sample_data(semen_physeq)$concentration_binned <- cut(sample_data(semen_physeq)$Mojo_concentration,
-                                                      breaks = c(0, 90, 250))
-Metadata_semen$concentration_binned <- sample_data(semen_physeq)$concentration_binned
+# 5.1 Using Vegan to caluclate alpha diversity
+
+# This commented codeblock gives an example of creating read-depth bins.
+# This might be useful if you have experienced low depth across samples, and want to investigate the impact of this on
+# any diversity metrics. The actual bins you choose should be dependent on your own data. 
 # Get total read counts per sample (after host removal)
-read_depth <- sample_sums(semen_physeq)
-read_depth
+# read_depth <- sample_sums(semen_physeq)
+# read_depth
 # Add to sample_data
-sample_data(semen_physeq)$read_depth <- read_depth
-sample_data(semen_physeq)$depth_binned <- cut(sample_data(semen_physeq)$read_depth,
+# sample_data(final_physeq)$read_depth <- read_depth
+# sample_data(final_physeq)$depth_binned <- cut(sample_data(final_physeq)$read_depth,
                                                       breaks = c(2000, 5000, 10000, 60000))
-Metadata_semen$read_depth <- sample_data(semen_physeq)$read_depth
-Metadata_semen$depth_binned <- sample_data(semen_physeq)$depth_binned
-# Repeat for whole dataset
-# Get total read counts per sample (after host removal)
-read_depth <- sample_sums(genus_physeq_no_outliers)
-read_depth
-# Add to sample_data
-sample_data(genus_physeq_no_outliers)$read_depth <- read_depth
+# Metadata$read_depth <- sample_data(final_physeq)$read_depth
+# Metadata$depth_binned <- sample_data(final_physeq)$depth_binned
+
 # Calculate alpha diversity metrics
-otu <- t(otu_table(semen_physeq))
+otu <- t(otu_table(final_physeq))
 S <- specnumber(otu)
 shannon <- diversity(otu, index = "shannon")
 pielou <- shannon / log(S)
 richness <- t(estimateR(otu))  # S.obs, Chao1, etc.
 # Combine into a single data frame
-alpha_df <- Metadata_semen %>%
+alpha_df <- Metadata |>
   mutate(
     S.obs = richness[,"S.obs"],
     Chao1 = richness[,"S.chao1"],
     Shannon = shannon,
     Pielou = pielou
   )
-# Check correlation with mapped_boar
-# Correlations of alpha diversity with other technical covariates
-ggplot(alpha_df, aes(x = mapped_boar, y = Chao1)) +
-  geom_point() +
-  geom_smooth(method = "lm") +
-  labs(title = "Chao1 diversity vs Mapped to Boar Genome",
-       x = "Reads mapped to boar genome (%)",
-       y = "Chao1 Index")
-ggsave("Chao1_boar_mapping.png", scale = 2)
-cor.test(alpha_df$Chao1, alpha_df$mapped_boar)
-# Pearson's product-moment correlation
-# data:  alpha_df$Chao1 and alpha_df$mapped_boar
-# t = -7.839, df = 28, p-value = 1.541e-08
-# alternative hypothesis: true correlation is not equal to 0
-# 95 percent confidence interval:
-# -0.9156819 -0.6680569
-# sample estimates:
-#       cor 
-# -0.8288405 
-cor.test(alpha_df$S.obs, alpha_df$mapped_boar)
-# Pearson's product-moment correlation
-# data:  alpha_df$S.obs and alpha_df$mapped_boar
-# t = -7.839, df = 28, p-value = 1.541e-08
-# alternative hypothesis: true correlation is not equal to 0
-# 95 percent confidence interval:
-# -0.9156819 -0.6680569
-# sample estimates:
-#       cor 
-# -0.8288405
-# Mapped to boar is a proxy for read depth - so use one or the other in the analysis following
-# Repeat above for read depth
-# Correlations of alpha diversity with other technical covariates
-ggplot(alpha_df, aes(x = read_depth, y = Chao1)) +
-  geom_point() +
-  geom_smooth(method = "lm", color = "black", linetype = "dashed") +
-  labs(title = "Relationship Between Sequencing Depth and Alpha Diversity",
-       subtitle = "Significant correlation between sample depth and Chao1 richness",
-       x = "Sample Read Count",
-       y = "Chao1 Index") +
-  stat_cor(method = "pearson", label.x = 3000, label.y = 120) +
-  theme_bw(base_size = 10) +
-  theme(text = element_text(size = 10),
-        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
-        plot.title = element_text(size = 12, face = "bold"),
-        plot.subtitle = element_text(size = 10))
-ggsave("Chao1_depth.pdf", width = 8, height = 6, units = "in")
-cor.test(alpha_df$Chao1, alpha_df$read_depth)
-# Pearson's product-moment correlation
-# data:  alpha_df$Chao1 and alpha_df$read_depth
-# t = 6.3612, df = 28, p-value = 6.964e-07
-# alternative hypothesis: true correlation is not equal to 0
-# 95 percent confidence interval:
-# 0.5650029 0.8841662
-# sample estimates:
-#       cor 
-# 0.7687838  
 
-# NB Chao1 and S.obs/richness are reporting the same results in this dataset because it 
-# contains no singleton observations - this is a result of the dada2 denoising workflow.
+# Correlations of alpha diversity with example technical covariates
+# ggplot(alpha_df, aes(x = read_depth, y = Chao1)) +
+#  geom_point() +
+#  geom_smooth(method = "lm", color = "black", linetype = "dashed") +
+#  labs(title = "Relationship Between Sequencing Depth and Alpha Diversity",
+#       x = "Sample Read Count",
+#       y = "Chao1 Index") +
+#  stat_cor(method = "pearson", label.x = 3000, label.y = 120) +
+#  theme_bw(base_size = 10) +
+#  theme(text = element_text(size = 10),
+#        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
+#        plot.title = element_text(size = 12, face = "bold"),
+#        plot.subtitle = element_text(size = 10))
+# Include a correlation test to check for over-fitting
+# cor.test(alpha_df$Chao1, alpha_df$read_depth) 
 
-# mapped_boar/read_depth and chao1 / S.obs extremely highly correlated.
-P1 <- ggplot(alpha_df, aes(x = Site, y = S.obs)) +
-  geom_boxplot(aes(fill = Site)) +
+# NB If you have used a dada2 denoising workflow, then it is likely that Chao1 and S.obs/richness will report the same results 
+# in your dataset because it will contain no singleton observations. 
+
+# The following code-block will produce comparative boxplots based on any metadata variable you wish to test for differences 
+# in alpha diversity. The metadata variable you choose is defined in the config.R file
+P1 <- ggplot(alpha_df, aes(x = met_var, y = S.obs)) +
+  geom_boxplot(aes(fill = met_var)) +
   geom_point(size = 1, alpha = 0.7) +
   stat_compare_means(method = "wilcox.test", label = "p.format", label.y = 120) +
   labs(title = 'Observed Richness (S.obs)', x = '', y = '', tag = "A") +
   theme_bw(base_size = 10) +
   theme(legend.position = "none")
 
-P2 <- ggplot(alpha_df, aes(x = Site, y = Chao1)) +
-  geom_boxplot(aes(fill = Site)) +
+P2 <- ggplot(alpha_df, aes(x = met_var, y = Chao1)) +
+  geom_boxplot(aes(fill = met_var)) +
   geom_point(size = 1, alpha = 0.7) +
   stat_compare_means(method = "wilcox.test", label = "p.format", label.y = 120) +
   labs(title= 'Chao1', x= ' ', y= '', tag = "B") +
   theme_bw(base_size = 10) +
   theme(legend.position = "none")
 
-P3 <- ggplot(alpha_df, aes(x = Site, y = Pielou$shannon)) +
-  geom_boxplot(aes(fill = Site)) +
+P3 <- ggplot(alpha_df, aes(x = met_var, y = Pielou$shannon)) +
+  geom_boxplot(aes(fill = met_var)) +
   geom_point(size = 1, alpha = 0.7) +
   stat_compare_means(method = "wilcox.test", label = "p.format", label.y = 0.7) +
   labs(title= 'Evenness (Pielou)', x= ' ', y= '', tag = "C") +
   theme_bw(base_size = 10) +
   theme(legend.position = "none")
 
-P4 <- ggplot(alpha_df, aes(x = Site, y = Shannon$shannon)) +
-  geom_boxplot(aes(fill = Site)) +
+P4 <- ggplot(alpha_df, aes(x = met_var, y = Shannon$shannon)) +
+  geom_boxplot(aes(fill = met_var)) +
   geom_point(size = 1, alpha = 0.7) +
   stat_compare_means(method = "wilcox.test", label = "p.format", label.y = 2.0) +
   labs(title= 'Shannon', x= ' ', y= '', tag = "D") +
@@ -1145,261 +1086,77 @@ P4 <- ggplot(alpha_df, aes(x = Site, y = Shannon$shannon)) +
 
 (P1 | P2) / (P3 | P4) +
   plot_annotation(
-    title = "Alpha Diversity Metrics by Site",
+    title = "Alpha Diversity Metrics by chosen metadata variable",
     subtitle = "Richness, Chao1, Evenness (Pielou), and Shannon indices with Wilcoxon p-values",
-    caption = "Note: S.obs and Chao1 are highly correlated with read depth and should be interpreted with caution.",
     theme = theme(text = element_text(size = 10),
                   plot.title = element_text(size = 12, face = "bold"),
                   plot.subtitle = element_text(size = 10),
                   plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"))
   )
-ggsave("Genus_Alpha_diversity_site_no_outliers.pdf", width = 8, height = 6, units = "in")
 
-P1 <- ggplot(alpha_df, aes(x = Line, y = S.obs)) +
-  geom_boxplot(aes(fill = Line)) +
-  geom_point(size = 1, alpha = 0.7) +
-  stat_compare_means(method = "kruskal.test", label = "p.format", label.y = 120) +
-  labs(title = 'Observed Richness (S.obs)', x = '', y = '', tag = "A") +
-  theme_bw(base_size = 10) +
-  theme(legend.position = "none",
-        axis.text.x = element_text(size = 7))
+# 5.2: Beta diversity
 
-P2 <- ggplot(alpha_df, aes(x = Line, y = Chao1)) +
-  geom_boxplot(aes(fill = Line)) +
-  geom_point(size = 1, alpha = 0.7) +
-  stat_compare_means(method = "kruskal.test", label = "p.format", label.y = 120) +
-  labs(title= 'Chao1', x= ' ', y= '', tag = "B") +
-  theme_bw(base_size = 10) +
-  theme(legend.position = "none",
-        axis.text.x = element_text(size = 7))
+# With low biomass samples, it is recommended to include some environmental samples alongside to test for sampling contamination
+# and to explore shared and unique taxa across related/neighbouring niches.
+# We being this exploration by analysing beta diversity.
 
-P3 <- ggplot(alpha_df, aes(x = Line, y = Pielou$shannon)) +
-  geom_boxplot(aes(fill = Line)) +
-  geom_point(size = 1, alpha = 0.7) +
-  stat_compare_means(method = "kruskal.test", label = "p.format", label.y = 0.7) +
-  labs(title= 'Evenness (Pielou)', x= ' ', y= '', tag = "C") +
-  theme_bw(base_size = 10) +
-  theme(legend.position = "none",
-        axis.text.x = element_text(size = 7))
-
-P4 <- ggplot(alpha_df, aes(x = Line, y = Shannon$shannon)) +
-  geom_boxplot(aes(fill = Line)) +
-  geom_point(size = 1, alpha = 0.7) +
-  stat_compare_means(method = "kruskal.test", label = "p.format", label.y = 2.0) +
-  labs(title= 'Shannon', x= ' ', y= '', tag = "D") +
-  theme_bw(base_size = 10) +
-  theme(legend.position = "none",
-        axis.text.x = element_text(size = 7))
-
-(P1 | P2) / (P3 | P4) +
-  plot_annotation(
-    title = "Alpha Diversity Metrics by Boar Line",
-    subtitle = "Richness, Chao1, Evenness (Pielou), and Shannon indices with Kruskal p-values",
-    caption = "Note: S.obs and Chao1 are highly correlated with read depth and should be interpreted with caution.",
-    theme = theme(text = element_text(size = 10),
-                  plot.title = element_text(size = 12, face = "bold"),
-                  plot.subtitle = element_text(size = 10),
-                  plot.margin = ggplot2::margin(1, 1, 1, 1, "cm")))
-ggsave("Genus_Alpha_diversity_line_no_outliers.pdf", width = 8, height = 6)
-
-
-P1 <- ggplot(alpha_df, aes(x = concentration_binned, y = S.obs)) +
-  geom_boxplot(aes(fill = concentration_binned)) +
-  geom_point(size = 1, alpha = 0.7) +
-  stat_compare_means(method = "wilcox.test", label = "p.format", label.y = 120) +
-  labs(title = 'Observed Richness (S.obs)', x = '', y = '', tag = "A") +
-  theme(legend.position = "none")
-
-P2 <- ggplot(alpha_df, aes(x = concentration_binned, y = Chao1)) +
-  geom_boxplot(aes(fill = concentration_binned)) +
-  geom_point(size = 1, alpha = 0.7) +
-  stat_compare_means(method = "wilcox.test", label = "p.format", label.y = 120) +
-  labs(title= 'Chao1', x= ' ', y= '', tag = "B") +
-  theme(legend.position = "none")
-
-P3 <- ggplot(alpha_df, aes(x = concentration_binned, y = Pielou$shannon)) +
-  geom_boxplot(aes(fill = concentration_binned)) +
-  geom_point(size = 1, alpha = 0.7) +
-  stat_compare_means(method = "wilcox.test", label = "p.format", label.y = 0.7) +
-  labs(title= 'Evenness (Pielou)', x= ' ', y= '', tag = "C") +
-  theme(legend.position = "none")
-
-P4 <- ggplot(alpha_df, aes(x = concentration_binned, y = Shannon$shannon)) +
-  geom_boxplot(aes(fill = concentration_binned)) +
-  geom_point(size = 1, alpha = 0.7) +
-  stat_compare_means(method = "wilcox.test", label = "p.format", label.y = 2.0) +
-  labs(title= 'Shannon', x= ' ', y= '', tag = "D") +
-  theme(legend.position = "none")
-
-(P1 | P2) / (P3 | P4) +
-  plot_annotation(
-    title = "Alpha Diversity Metrics by Semen Concentration (Semen Samples Only, Outliers Removed)",
-    subtitle = "Richness, Chao1, Evenness (Pielou), and Shannon indices with Wilcoxon p-values",
-    caption = "Note: S.obs and Chao1 are highly correlated with mapping of reads to boar genome and should be interpreted with caution.",
-    theme = theme(plot.title = element_text(size = 16, face = "bold"),
-                  plot.subtitle = element_text(size = 12)))
-ggsave("Genus_Alpha_diversity_concentration_no_outliers.png", scale = 3)
-
-# Could potentially look at the skin and glove samples - but there are so few
-# of them that statistical tests won't be robust - leave for now.
-
-######################################################################
-#
-# Section 6: Beta diversity
-#
-######################################################################
-# In this section we will be exploring beta-diversity using the datasets with outliers removed.
-# Aim here is to explore beta diversity across the different niches (i.e. semen v gloves,
-# boar swabs and extender), and the beta diversity within the semen samples based on the 
-# semen metadata we have: Site, Boar Line, Semen concentration, Motility, Viability, plus
-# checking for correlation with technical variables too. We have seen in alpha diversity
-# that the percentage of reads that originally mapped to the boar genome (i.e. a proxy for
-# read depth) was highly correlated with richness/chao1.
-
-# Another priority here is to explore beta diversity using different distance indices.
-# Particularly interested in those that incorporate phylogenetic information such as
-# unifrac, but should also cover the other common and useful distances such as Bray Curtis
+# A priority here is to explore beta diversity using different distance indices.
+# You might be interested in those that incorporate phylogenetic information such as
+# unifrac, but can also cover the other common and useful distances such as Bray Curtis
 # for completeness.
 
-# Let's look at some of the metadata variables that have continuous distribution
-qplot(sample_data(semen_physeq)$Mojo_concentration, geom = "histogram") + xlab("Concentration")
-# This shows a skewed guassian distribution - with peak around 50x10^6 cells/ml. The range
-# upwards to 250 become sparser here.
-qplot(sample_data(semen_physeq)$Total_Motility, geom = "histogram") + xlab("Motility")
-# Skewed to the higher end - most samples between 80-95% showed large amount of homogeneity.
-# There are only 4 samples lower than this, 2 around 70%, 1 at ~60 and the other 55%.
-qplot(sample_data(semen_physeq)$Alive, geom = "histogram") + xlab("Viability")
-# Viability shows peak at 70% and remainder of samples are mostly above this, up to 90%.
-# There are a couple of outliers at lower measures - 45 and 60%.
-qplot(sample_data(semen_physeq)$Acrosome_damaged, geom = "histogram") + xlab("Acrosome damage")
-# Low counts here, as expected. Poisson distribution (I think - whatever the name is for
-# A skewed distribution). Peak around 4-5%, then downward trend to 25%.
-qplot(sample_data(semen_physeq)$DFI, geom = "histogram") + xlab("Acrosome damage")
-# Again, low values - DFI stands for DNA fragmentation index. Most peak beneath 1%.
-# highest value is 6% which is clear outlier. Main batch of values end at 2%.
-
-# Overall semen metadata is largely homogenous with a few outliers, as is normal with 
-# breeding boar, as these all have high quality semen. Concentration is probably the
-# most interesting metric here.
-
-qplot(sample_data(semen_physeq)$quant_reading, geom = "histogram") + xlab("DNA concentration")
-# unremarkable. A large block of values between 8-22. One outlier at 35.
-qplot(sample_data(semen_physeq)$mapped_boar, geom = "histogram") + xlab("Read mapped to boar genome %")
-# A large range here, from 0 to 80%. Distribution fairly even.
-
-# We know that I have a wide variety of read depths, with many samples at the low end.
-# Let's look at the logged counts per sample.
-# Remember that these physeqs have outliers removed, as in previous section.
-qplot(log10(rowSums(otu_table(semen_physeq)))) +
+# You should check the distribution of any metadata variables as follows
+qplot(sample_data(final_physeq)$read_depth, geom = "histogram") + xlab("Read Depth")
+# In the run that this workflow originated from, I had a wide variety of read depths, with many samples at the low end.
+# Visualising the logged counts per sample was a useful way to quickly check whether this produced a more gaussian distribution.
+qplot(log10(rowSums(otu_table(final_physeq)))) +
   xlab("Logged counts-per-sample")
-# This distribution suggests that log transformation is ok for initial quick
-# look at data normalisation. The distribution is now much more gaussian.
-qplot(log10(rowSums(otu_table(genus_physeq_no_outliers)))) +
-  xlab("Logged counts-per-sample")
-# Again, gaussian. Suggests this transformation is ok for beta diversity metrics that
-# can be visualised with PCoA. Consider CLR for other measures.
+# If this is the case for you, then it suggests that log transformation is ok for calculating
+# beta diversity metrics that can be visualised with PCoA. You should also consider CLR for other measures, details provided below.
 
-# The total_motility from genus, is very homogenous and doesn't suggest there
-# will be much use in making this a categorical variable.
-# The mojo motility may be better, but what does it mean really? As semen
-# analysis suggested, may just be a factor of the semen concentration
-# semen concentration may be better to work with as a new factor.
-
-sslog <- transform_sample_counts(semen_physeq, function(x) log(1 + x))
-genuslog <- transform_sample_counts(genus_physeq_no_outliers, function(x) log(1 + x))
+pslog <- transform_sample_counts(final_physeq, function(x) log(1 + x))
 
 # Explore relatedness of all niches
-ggord <- ordinate(genuslog, method = "PCoA", distance = "wunifrac")
-ggevals <- ggord$values$Eigenvalues
-ggord_df <- plot_ordination(genuslog, ggord, color = "sampletype", justDF = TRUE)
-ggord_df$label <- ifelse(ggord_df$Axis.1 < -0.08, rownames(ggord_df), NA) # label only outliers
-pc1_var <- round(100 * ggevals[1] / sum(ggevals), 1)
-pc2_var <- round(100 * ggevals[2] / sum(ggevals), 1)
-wuniall <- ggplot(ggord_df, aes(x = Axis.1, y = Axis.2, color = sampletype)) +
+psord <- ordinate(pslog, method = "PCoA", distance = "wunifrac")
+psevals <- psord$values$Eigenvalues
+psord_df <- plot_ordination(pslog, psord, color = "met_var", justDF = TRUE)
+psord_df$label <- ifelse(psord_df$Axis.1 < -0.08, rownames(psord_df), NA) # label only outliers
+pc1_var <- round(100 * psevals[1] / sum(psevals), 1)
+pc2_var <- round(100 * psevals[2] / sum(psevals), 1)
+wuni <- ggplot(psord_df, aes(x = Axis.1, y = Axis.2, color = met_var)) +
   geom_point(size = 2, alpha = 0.9) +
   labs(x = paste0("PCoA 1 (", pc1_var, "%)"),
        y = paste0("PCoA 2 (", pc2_var, "%)"),
-       title = "Weighted Unifrac PCoA by Sample Type",
-       subtitle = "Semen and boar swabs are closely related, with two notable semen outliers",
-       color = "Sample Type") +
+       title = "Weighted Unifrac PCoA") +
   ggrepel::geom_text_repel(aes(label = label), size = 3, na.rm = TRUE) +
-  scale_color_discrete(label = c("Boar Swab", "Extender", "Glove swab", "Boar Semen")) +
-  coord_fixed(sqrt(ggevals[2] / ggevals[1])) +
+  coord_fixed(sqrt(psevals[2] / psevals[1])) +
   theme_bw(base_size = 10) +
   theme(text = element_text(size = 10),
         plot.title = element_text(face = "bold", size = 14),
         plot.margin = ggplot2::margin(0.5, 0.5, 0.5, 0.5, "cm"),
-        plot.subtitle = element_text(size = 11),
         axis.text = element_text(size = 7, angle = 90),
         legend.text = element_text(size = 10))
 wuniall
-ggsave("wunifrac_all.png", width = 8, height = 6, dpi = 300)
-ggsave("wunifrac_all.pdf", width = 8, height = 6)
-# Here semen sample 0839K is a clear outlier.
-# Weighted unifrac shows the most clear distinction between the sample types.
-# The boar swab samples are most closely related to the semen samples.
+# This plot will label any outlier samples
 
 # Performing a PERMANOVA.
-# Checking model with all technical variables included - no significance found except for sampletype
-# Removing these variables from final model to avoid overfitting.
-adonis2(distance(genuslog, method = "wunifrac") ~ sampletype,
-        data = as(sample_data(genuslog), "data.frame"),by = "margin")
-# Permutation test for adonis under reduced model
-# Marginal effects of terms
-# Permutation: free
-# Number of permutations: 999
+adonis2(distance(pslog, method = "wunifrac") ~ met_var,
+        data = as(sample_data(pslog), "data.frame"),by = "margin")
+# You should explore additional variables and include technical co-variates in these permanovas - in order to check that
+# any observed significance isn't explained by depth / batch effects etc.
+# Also, avoid over-fitting of data.                                 
 
-# adonis2(formula = distance(genuslog, method = "wunifrac") ~ sampletype, data = as(sample_data(genuslog), "data.frame"), by = "margin")
-# Df SumOfSqs      R2      F Pr(>F)   
-# sampletype  3  0.12315 0.24464 3.4547  0.018 *
-# Residual    32  0.38025 0.75536                  
-# Total       35  0.50304 1.00000                 
-# ---
-#  Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
-# Warning message:
-#  In matrix(tree$edge[order(tree$edge[, 1]), ][, 2], byrow = TRUE,  :
-#              data length [1155] is not a sub-multiple or multiple of the number of rows [578]
-
-# Explore semen samples now - first by site
-ord <- ordinate(sslog, method = "PCoA", distance = "wunifrac")
-evals <- ord$values$Eigenvalues
-ord_df <- plot_ordination(sslog, ord, color = "Site", justDF = TRUE)
-ord_df$label <- ifelse(ord_df$Axis.1 > 0.1, rownames(ord_df), NA) # label only outliers
-pc1_var <- round(100 * evals[1] / sum(evals), 1)
-pc2_var <- round(100 * evals[2] / sum(evals), 1)
-ggplot(ord_df, aes(x = Axis.1, y = Axis.2, color = Site)) +
-  geom_point(size = 2, alpha = 0.7) +
-  labs(x = paste0("PCoA 1 (", pc1_var, "%)"),
-       y = paste0("PCoA 2 (", pc2_var, "%)"),
-       title = "Weighted Unifrac PCoA of Semen by Boar Stud",
-       subtitle = "Willingham samples appear more closely related",
-       caption = "Data has been normalised through log transformation and low depth samples removed",
-       color = "Sample Type") +
-  stat_ellipse() +
-  ggrepel::geom_text_repel(aes(label = label), size = 3, na.rm = TRUE) +
-  scale_color_observable() +
-  coord_fixed(sqrt(evals[2] / evals[1])) +
-  theme_bw(base_size = 10) +
-  theme(text = element_text(size = 7),
-        plot.title = element_text(face = "bold", size = 10),
-        plot.margin = ggplot2::margin(1, 1, 0.5, 1, "cm"),
-        plot.subtitle = element_text(size = 7),
-        axis.text = element_text(size = 7, angle = 90),
-        legend.text = element_text(size = 6))
-ggsave("wunifrac_site.png", scale = 2)
-# Here semen sample 0839K is a clear outlier again, 0313K less so.
-wuni_stud <- ggplot(ord_df, aes(x = Axis.1, y = Axis.2, colour=Site, size = read_depth)) +
+# Here I give an example where I have included read_depth into the PCoA.
+wuni_depth <- ggplot(psord_df, aes(x = Axis.1, y = Axis.2, colour=met_var, size = read_depth)) +
   geom_point(alpha = 0.9) +
   labs(x = paste0("PCoA 1 (", pc1_var, "%)"),
        y = paste0("PCoA 2 (", pc2_var, "%)"),
-       title = "Weighted Unifrac PCoA of Semen by Boar Stud",
-       subtitle = "Willingham samples appear more closely related, and higher depth samples are tightly clustered",
-       caption = "Data has been normalised through log transformation and low depth samples removed",
-       color = "Site",
+       title = "Weighted Unifrac PCoA",
+       caption = "Data has been normalised through log transformation",
        size = "Read Depth") +
   ggrepel::geom_text_repel(aes(label = label), size = 3, na.rm = TRUE) +
   scale_color_observable() +
-  coord_fixed(sqrt(evals[2] / evals[1])) +
+  coord_fixed(sqrt(psevals[2] / psevals[1])) +
   theme_bw(base_size = 10) +
   theme(text = element_text(size = 10),
         plot.title = element_text(face = "bold", size = 14),
@@ -1407,223 +1164,16 @@ wuni_stud <- ggplot(ord_df, aes(x = Axis.1, y = Axis.2, colour=Site, size = read
         plot.subtitle = element_text(size = 11),
         axis.text = element_text(size = 10, angle = 90),
         legend.text = element_text(size = 10))
-wuni_stud
-ggsave("wunifrac_stud_depth.pdf", width = 8, height = 6)
-combo_wuni <- wuniall + wuni_stud+ plot_layout(nrow = 2)
-combo_wuni
-ggsave("combo_wuni.pdf", plot = combo_wuni, width = 9, height = 7, units = "in")
+wuni_depth
+
 # Check stats
-adonis2(distance(sslog, method = "wunifrac") ~ Site + read_depth,
-        data = as(sample_data(sslog), "data.frame"),by = "margin")
+adonis2(distance(pslog, method = "wunifrac") ~ met_var + read_depth,
+        data = as(sample_data(pslog), "data.frame"),by = "margin")
 
-# Now by boar line
-ord <- ordinate(sslog, method = "PCoA", distance = "wunifrac")
-evals <- ord$values$Eigenvalues
-ord_df <- plot_ordination(sslog, ord, color = "Line", justDF = TRUE)
-ord_df$label <- ifelse(ord_df$Axis.1 > 0.1, rownames(ord_df), NA) # label only outliers
-pc1_var <- round(100 * evals[1] / sum(evals), 1)
-pc2_var <- round(100 * evals[2] / sum(evals), 1)
-ggplot(ord_df, aes(x = Axis.1, y = Axis.2, color = Line)) +
-  geom_point(size = 2, alpha = 0.7) +
-  labs(x = paste0("PCoA 1 (", pc1_var, "%)"),
-       y = paste0("PCoA 2 (", pc2_var, "%)"),
-       title = "Weighted Unifrac PCoA of Semen by Boar Line",
-       subtitle = "LW and LR samples appear most closely related, however there is substantial overlap between all groups",
-       caption = "Data has been normalised through log transformation and low depth samples removed",
-       color = "Boar Line") +
-  ggrepel::geom_text_repel(aes(label = label), size = 3, na.rm = TRUE) +
-  scale_color_observable() +
-  coord_fixed(sqrt(evals[2] / evals[1])) +
-  theme_bw()
-ggsave("wunifrac_line.png", scale = 2)
-# Appears to be some clustering but difficult to make out.
-
-# Exploring the ordination as a convex hull plot.
-# Assuming ord_df is your ordination data frame and 'Line' is your group variable
-find_hull <- function(df) df[chull(df$Axis.1, df$Axis.2), ]
-hulls <- ord_df %>% group_by(Line) %>% do(find_hull(.))
-ggplot(ord_df, aes(x = Axis.1, y = Axis.2, color = Line)) +
-  geom_point(size = 3, alpha = 0.7) +
-  geom_polygon(data = hulls, aes(fill = Line, group = Line), alpha = 0.2, color = NA) +
-  labs(title = "PCoA with Convex Hulls by Boar Line",
-       x = paste0("PCoA 1 (", pc1_var, "%)"),
-       y = paste0("PCoA 2 (", pc2_var, "%)"),) +
-  theme_minimal()
-# Centroids and segments
-centroids <- ord_df %>%
-  group_by(Line) %>%
-  summarize(centroid1 = mean(Axis.1), centroid2 = mean(Axis.2))
-ggplot(ord_df, aes(x = Axis.1, y = Axis.2, color = Line)) +
-  geom_point(size = 3, alpha = 0.7) +
-  geom_point(data = centroids, aes(x = centroid1, y = centroid2), size = 5, shape = 4, color = "black") +
-  geom_segment(data = merge(ord_df, centroids, by = "Line"),
-               aes(xend = centroid1, yend = centroid2), alpha = 0.3) +
-  labs(title = "PCoA with Group Centroids by Boar Line",
-       x = paste0("PCoA 1 (", pc1_var, "%)"),
-       y = paste0("PCoA 2 (", pc2_var, "%)"),) +
-  theme_minimal()
-# Density contours
-ggplot(ord_df, aes(x = Axis.1, y = Axis.2, color = Line, fill = Line)) +
-  geom_point(size = 3, alpha = 0.7) +
-  stat_density_2d(aes(fill = Line), geom = "polygon", alpha = 0.2, color = NA) +
-  labs(title = "PCoA with Density Contours by Boar Line") +
-  theme_minimal()
-# Faceting
-ggplot(ord_df, aes(x = Axis.1, y = Axis.2, color = Line)) +
-  geom_point(size = 3, alpha = 0.7) +
-  facet_wrap(~ Line) +
-  labs(title = "PCoA Faceted by Boar Line") +
-  theme_minimal()
-# I think the base PcoA is best for now, although the facet does show just how much
-# overlap there is between the boar lines.
-
-# Now let's try semen characterisitics
-ord_df <- plot_ordination(sslog, ord, shape = "Site", justDF = TRUE)
-ord_df$label <- ifelse(ord_df$Axis.1 > 0.1, rownames(ord_df), NA) # label only outliers
-pc1_var <- round(100 * evals[1] / sum(evals), 1)
-pc2_var <- round(100 * evals[2] / sum(evals), 1)
-ggplot(ord_df, aes(x = Axis.1, y = Axis.2, shape = Site, color = Mojo_concentration)) +
-  geom_point(size = 3, alpha = 0.7) +
-  labs(x = paste0("PCoA 1 (", pc1_var, "%)"),
-       y = paste0("PCoA 2 (", pc2_var, "%)"),
-       title = "Weighted Unifrac PCoA of Semen by Site and Concentration",
-       subtitle = "Highly concentrated samples are exclusively from Willingham",
-       caption = "Data has been normalised through log transformation and low depth samples removed",
-       color = "Semen Concentration (10^6)") +
-  ggrepel::geom_text_repel(aes(label = label), size = 3, na.rm = TRUE) +
-  scale_color_bs5("purple") +
-  stat_ellipse() +
-  coord_fixed(sqrt(evals[2] / evals[1]))
-ggsave("wunifrac_site_conc.png", scale = 2)
-# important question to ask Craig here - how is extender added. Does it bear any relationship
-# to the concentration of the original samples at all? If not it is pointless presenting
-# this issue.
-
-ggplot(ord_df, aes(x = Axis.1, y = Axis.2, color = read_depth, shape = Site)) +
-  geom_point(size = 2, alpha = 0.7) +
-  labs(x = paste0("PCoA 1 (", pc1_var, "%)"),
-       y = paste0("PCoA 2 (", pc2_var, "%)"),
-       title = "Weighted Unifrac PCoA of Semen by Site and Read depth",
-       subtitle = "Higher depth samples appear tightly clustered.",
-       caption = "Data has been normalised through log transformation and low depth samples removed",
-       color = "Read depth") +
-  ggrepel::geom_text_repel(aes(label = label), size = 3, na.rm = TRUE) +
-  scale_color_viridis_c() + 
-  coord_fixed(sqrt(evals[2] / evals[1])) +
-  theme_bw()
-ggsave("wunifrac_site_depth.png", scale = 2)
-# Now that low depth samples are removed - read depth still appears significant
-ggplot(ord_df, aes(x = Axis.1, y = Axis.2, color = read_depth, shape = Site)) +
-  geom_point(size = 2, alpha = 0.7) +
-  labs(x = paste0("PCoA 1 (", pc1_var, "%)"),
-       y = paste0("PCoA 2 (", pc2_var, "%)"),
-       title = "Weighted Unifrac PCoA of Semen by Site and Read depth",
-       subtitle = "Despite removal of the lowest depth samples, a relationship between depth and distance remains apparent.",
-       caption = "Data has been normalised through log transformation and low depth samples removed",
-       color = "Read depth") +
-  ggrepel::geom_text_repel(aes(label = label), size = 3, na.rm = TRUE) +
-  scale_color_bs5("purple") + 
-  coord_fixed(sqrt(evals[2] / evals[1]))
-ggsave("wunifrac_site_depth2.png", scale = 2)
-# Code in case want to look at binned continuous variables.
-sample_data(sslog)$concentration_binned <- cut(sample_data(sslog)$Mojo_concentration,
-                                     breaks = c(0, 90, 250))
-sample_data(sslog)$mapped_binned <- cut(sample_data(sslog)$mapped_boar,
-                                               breaks = c(0, 25, 50, 100))
-
-# P is no longer significant
-wuni_dist <- phyloseq::distance(sslog, method = "wunifrac")
-beta_disp <- betadisper(wuni_dist, sample_data(sslog)$concentration_binned)
-anova(beta_disp)
-# The beta-dispersion test is a way of testing whether differences in spread
-# are responsible for the permanova result.
-
-# This shows that Boston only contains low conc samples
-# Plan - subset to Willingham
-sslog_willingham <- subset_samples(sslog, Site == "Willingham")
-# THINK ABOUT EXPLORING IN MORE DETAIL BASED ON WHAT CRAIG SAYS
-
-# Alternative methods CLR
+# Alternative method using CLR
 library(microbiome)
-clr_phy <- microbiome::transform(sslog, "clr")
-# calculate Euclidean distances
-clr_dist <- dist(t(otu_table(clr_phy)))
-# Ordinate and plot
-ordination_clr <- ordinate(clr_phy, method = "PCoA", distance = clr_dist)
-ord_df <- plot_ordination(clr_phy, ordination_clr, justDF = TRUE)
-
-# Example plot
-ggplot(ord_df, aes(x = Axis.1, y = Axis.2, color = read_depth)) +
-  geom_point(size = 3) +
-  scale_colour_viridis_c() +
-  labs(title = "PCoA of CLR-transformed Data (Aitchison Distance), coloured for read depth of samples",
-       subtitle = "There is a correlation between sample read depth and Axis 1",
-       caption = "Pearson's product-moment correlation, p = 1.621e-06",
-       colour = "Read Depth")
-ggsave("CLR_depth_PCoA.png", scale = 2)
-cor.test(ord_df$Axis.1, ord_df$read_depth)
-# Pearson's product-moment correlation
-# data:  ord_df$Axis.1 and ord_df$read_depth
-# t = -6.0591, df = 28, p-value = 1.561e-06
-# alternative hypothesis: true correlation is not equal to 0
-# 95 percent confidence interval:
-# -0.8758170 -0.5392739
-# sample estimates:
-#       cor 
-# -0.7532072
-
-# Perform a PCA for comparison
-# Extract CLR-transformed counts as a matrix (samples x taxa)
-clr_matrix <- as(otu_table(clr_phy), "matrix")
-if (taxa_are_rows(clr_phy)) {
-  clr_matrix <- t(clr_matrix)  # Ensure rows = samples, columns = taxa
-}
-
-# Perform PCA
-pca_result <- prcomp(clr_matrix, scale. = FALSE)
-
-# Build PCA data frame for plotting
-pca_df <- as.data.frame(pca_result$x)
-pca_df$SampleID <- rownames(pca_df)
-
-# Add metadata
-metadata <- as(sample_data(clr_phy), "data.frame")
-metadata$SampleID <- rownames(metadata)
-pca_df <- merge(pca_df, metadata, by = "SampleID")
-
-# Plot PCA
-ggplot(pca_df, aes(x = PC1, y = PC2, color = read_depth)) +
-  geom_point(size = 3) +
-  scale_colour_viridis_c() +
-  labs(
-    title = "PCA of CLR-transformed Data, coloured for read depth of samples",
-    x = paste0("PC1 (", round(100 * summary(pca_result)$importance[2, 1], 1), "%)"),
-    y = paste0("PC2 (", round(100 * summary(pca_result)$importance[2, 2], 1), "%)")
-  )
-# PCoA coordinates (from your previous ordination)
-pcoa_coords <- ord_df[, c("Axis.1", "Axis.2")]
-rownames(pcoa_coords) <- rownames(ord_df)
-
-# PCA coordinates
-pca_coords <- pca_df[, c("PC1", "PC2")]
-rownames(pca_coords) <- pca_df$SampleID
-
-# Merge for comparison
-comparison <- merge(
-  pcoa_coords, pca_coords,
-  by = "row.names", all = FALSE
-)
-colnames(comparison) <- c("SampleID", "PCoA1", "PCoA2", "PCA1", "PCA2")
-
-# Plot comparison
-ggplot(comparison, aes(x = PCoA1, y = PCA1)) +
-  geom_point() +
-  labs(title = "Comparison of PCoA1 and PCA1 (CLR-transformed data)")
-# Yes - PCA and PCoA produce exactly the same results here.
-
-# Final CLR plot then:
 # Transform to relative abundances
-rel_abund <- microbiome::transform(sslog, "compositional")
+rel_abund <- microbiome::transform(pslog, "compositional")
 # Apply CLR transformation
 clr_phy <- microbiome::transform(rel_abund, "clr")
 # calculate Euclidean distances
@@ -1646,12 +1196,11 @@ metadata$SampleID <- rownames(metadata)
 pca_df <- merge(pca_df, metadata, by = "SampleID")
 
 # Plot
-ggplot(pca_df, aes(x = PC1, y = PC2, color = Site)) +
+ggplot(pca_df, aes(x = PC1, y = PC2, color = met_var)) +
   geom_point(aes(size = read_depth), alpha = 0.8) +
   scale_size_continuous(name = "Read depth") +
   scale_color_igv() +
-  labs(title = "PCA of CLR-transformed semen data",
-       subtitle = "Both Site and Read-depth are significant predictors of microbial composition.",
+  labs(title = "PCA of CLR-transformed data",
        x = paste0("PC1 (", round(100 * summary(pca_result)$importance[2, 1], 1), "%)"),
        y = paste0("PC2 (", round(100 * summary(pca_result)$importance[2, 2], 1), "%)")) +
   theme_bw(base_size = 10) +
@@ -1662,50 +1211,8 @@ ggplot(pca_df, aes(x = PC1, y = PC2, color = Site)) +
          axis.text = element_text(size = 10, angle = 90),
          legend.text = element_text(size = 10)) +
   stat_ellipse()
-ggsave("CLR_site_depth.png", width = 8, height = 6, dpi = 300)
-ggsave("CLR_site_depth.pdf", width = 8, height = 6)
-# Test association with Site and Line and cofounders
-adonis2(clr_dist ~ Site + read_depth, data = as(sample_data(clr_phy), "data.frame"),
-        by = "margin")
-# Let's expand the model.
-# First we should check for colinearity between variables
-cor.test(pca_df$Mojo_concentration, pca_df$Mojo_Total_Motility)
-# p = 9.269e-05. These variables are highly correlated, so don't use both.
-cor.test(pca_df$read_depth, pca_df$mapped_boar)
-# again, as expected, p=1.158e-06, highly correlated so don't use both.
-cor.test(pca_df$Alive, pca_df$Mojo_Total_Motility)
-# On the verge of statistical significance here - as expected.
-# Now we know what to avoid in the statistical model
-adonis2(clr_dist ~ Site + Line + read_depth + Mojo_concentration + Alive + Total_Motility + DFI + Acrosome_damaged,
-        data = as(sample_data(clr_phy), "data.frame"),
-        by = "margin")
-# Permutation test for adonis under reduced model
-# Marginal effects of terms
-# Permutation: free
-# Number of permutations: 999
 
-# adonis2(formula = clr_dist ~ Site + Line + read_depth + Mojo_concentration + Alive + Total_Motility + DFI + Acrosome_damaged, data = as(sample_data(clr_phy), "data.frame"), by = "margin")
-# Df SumOfSqs      R2      F Pr(>F)  
-# Site                1    419.4 0.04082 1.2965  0.042 *
-# Line                3   1064.5 0.10360 1.0969  0.149  
-# read_depth          1    465.1 0.04526 1.4377  0.012 *
-# Mojo_concentration  1    338.7 0.03296 1.0471  0.328  
-# Alive               1    348.8 0.03394 1.0781  0.268  
-# Total_Motility      1    371.4 0.03614 1.1480  0.140  
-# DFI                 1    400.3 0.03896 1.2374  0.066 .
-# Acrosome_damaged    1    340.7 0.03316 1.0533  0.309  
-# Residual           19   6146.1 0.59816                
-# Total              29  10275.0 1.00000                
-# ---
-#  Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
 
-# Based on this - the most significant aspects to focus the model on are: Site and read depth.
-# Hence:
-adonis2(clr_dist ~ Site + read_depth,
-        data = as(sample_data(clr_phy), "data.frame"),
-        by = "margin")
-# Here, Site explains 4.973% of the variance at p=0.006 **
-# Whilst Read Depth explains 6.563% of the variance at p=0.001 ***
 
 ######################################################################
 #
