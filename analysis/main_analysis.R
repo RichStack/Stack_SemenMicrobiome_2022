@@ -1094,7 +1094,7 @@ P4 <- ggplot(alpha_df, aes(x = .data[[met_var]], y = Shannon$shannon)) +
 
 # With low biomass samples, it is recommended to include some environmental samples alongside to test for sampling contamination
 # and to explore shared and unique taxa across related/neighbouring niches.
-# We being this exploration by analysing beta diversity.
+# We begin this exploration by analysing beta diversity.
 
 # A priority here is to explore beta diversity using different distance indices.
 # You might be interested in those that incorporate phylogenetic information such as
@@ -1102,23 +1102,33 @@ P4 <- ggplot(alpha_df, aes(x = .data[[met_var]], y = Shannon$shannon)) +
 # for completeness.
 
 # You should check the distribution of any metadata variables as follows
-qplot(sample_data(final_physeq)$read_depth, geom = "histogram") + xlab("Read Depth")
+sd <- as(sample_data(final_physeq), "data.frame")
+
+ggplot(sd, aes(x = .data[[met_var]])) +
+  geom_histogram(bins = 30) +
+  labs(x = met_var, y = "Count") +
+  theme_bw()
+
 # In the run that this workflow originated from, I had a wide variety of read depths, with many samples at the low end.
 # Visualising the logged counts per sample was a useful way to quickly check whether this produced a more gaussian distribution.
-qplot(log10(rowSums(otu_table(final_physeq)))) +
-  xlab("Logged counts-per-sample")
 # If this is the case for you, then it suggests that log transformation is ok for calculating
 # beta diversity metrics that can be visualised with PCoA. You should also consider CLR for other measures, details provided below.
 
 pslog <- transform_sample_counts(final_physeq, function(x) log(1 + x))
+sd2 <- as(sample_data(pslog), "data.frame")
 
+ggplot(sd2, aes(x = .data[[met_var]])) +
+  geom_histogram(bins = 30) +
+  labs(x = met_var, y = "Count") +
+  theme_bw()
+                                 
 # Explore relatedness of all niches
 psord <- ordinate(pslog, method = "PCoA", distance = beta_distance)
 psevals <- psord$values$Eigenvalues
 psord_df <- plot_ordination(pslog, psord, justDF = TRUE)
 psord_df[[met_var]] <- sample_data(pslog)[[met_var]]
-
-psord_df$label <- ifelse(psord_df$Axis.1 < -0.08, rownames(psord_df), NA) # label only outliers
+# optional labelling of outliers
+# psord_df$label <- ifelse(psord_df$Axis.1 < -0.08, rownames(psord_df), NA) # label only outliers
 pc1_var <- round(100 * psevals[1] / sum(psevals), 1)
 pc2_var <- round(100 * psevals[2] / sum(psevals), 1)
 wuni <- ggplot(psord_df, aes(x = Axis.1, y = Axis.2, color = .data[[met_var]])) +
@@ -1126,7 +1136,7 @@ wuni <- ggplot(psord_df, aes(x = Axis.1, y = Axis.2, color = .data[[met_var]])) 
   labs(x = paste0("PCoA 1 (", pc1_var, "%)"),
        y = paste0("PCoA 2 (", pc2_var, "%)"),
        title = "Weighted Unifrac PCoA") +
-  ggrepel::geom_text_repel(aes(label = label), size = 3, na.rm = TRUE) +
+  # ggrepel::geom_text_repel(aes(label = label), size = 3, na.rm = TRUE) +
   coord_fixed(sqrt(psevals[2] / psevals[1])) +
   theme_bw(base_size = 10) +
   theme(text = element_text(size = 10),
@@ -1135,7 +1145,8 @@ wuni <- ggplot(psord_df, aes(x = Axis.1, y = Axis.2, color = .data[[met_var]])) 
         axis.text = element_text(size = 7, angle = 90),
         legend.text = element_text(size = 10))
 wuni
-# This plot will label any outlier samples
+# The commented code in this block can be used to label any outlier samples
+# but you will need to inspect your plot first to see whether this is necessary, and if so, amend the axis parameters on line 1123 
 
 # Performing a PERMANOVA.
 adonis_formula <- as.formula(
