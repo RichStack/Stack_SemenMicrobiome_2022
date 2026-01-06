@@ -1256,8 +1256,6 @@ length(get_taxa_unique(final_physeq, taxonomic.rank = "Genus"))
 
 phyglom <- tax_glom(final_rel_physeq, taxrank = 'Phylum', NArm = FALSE)
 phymelt <- psmelt(phyglom)
-# change to character for easy-adjusted level
-phymelt$phylum <- as.character(phymelt$Phylum)
                                  
 # To create a faceted plot according to your metadata variable defined in the config file:
 stphymelt <- phymelt |>
@@ -1266,8 +1264,9 @@ stphymelt <- phymelt |>
 # To get the same rows together
 stphymelt_sum <- stphymelt |>
   group_by(Sample, .data[[met_var]], Phylum) |>
-  summarise(Abundance=sum(Abundance))
+  summarise(Abundance = sum(Abundance), .groups = "drop")
 # Example: order by Firmicutes abundance - you can change to whatever your most abundant Phylum is.
+# Naming convention may differ depending on the database used.
 ordered_samples <- stphymelt_sum |>
   filter(Phylum == "Firmicutes") |>
   arrange(.data[[met_var]], desc(Abundance)) |>
@@ -1320,13 +1319,15 @@ ps.melt.genus$Genus_label <- with(ps.melt.genus,
                                         Genus))
 # select group median  - here you will need to play with the median statistic, as the readability of the plot will be very much
 # dependent on the richness of the samples. In my dataset, I had to keep the median higher than I liked, in order to create a readable plot.
-# This issue, and how to counter it, will be explored further below.
+# Beware, if < 7.5% doesn’t exist (e.g. very simple microbial communities), this returns character(0) and nothing is plotted.
+
+# The issue of plotting rich communites, and how to counter it, will be explored further below and in the next section.
 keep <- unique(ps.melt.genus$Genus_label[ps.melt.genus$median > 0.075])
 ps.melt.genus$Genus_label[!(ps.melt.genus$Genus_label %in% keep)] <- "< 7.5%"
 #to get the same rows together
 ps.melt.genus_sum <- ps.melt.genus |>
   group_by(Sample, .data[[met_var]], Genus_label) |>
-  summarise(Abundance=sum(Abundance))
+  summarise(Abundance=sum(Abundance), .groups = "drop")
 # Example: order by Firmicutes abundance
 ordered_samples <- ps.melt.genus_sum |>
   filter(Genus_label == "< 7.5%") |>
@@ -1382,7 +1383,7 @@ ps.melt.genus$Genus_label <- with(ps.melt.genus,
 # Prep genus table (already agglomerated and relative abundance)
 top_genera <- ps.melt.genus |>
   group_by(Genus_label) |>
-  summarise(mean_abund = mean(Abundance)) |>
+  summarise(mean_abund = mean(Abundance), .groups = "drop") |>
   arrange(desc(mean_abund)) |>
   slice_head(n = 20)
 
@@ -1441,7 +1442,7 @@ ggplot(bubble_data, aes(x = Sample, y = Genus_label)) +
 # We prepare the dataset as before:
 genus_summary <- ps.melt.genus |>
   group_by(.data[[met_var]], Genus_label) |>
-  summarise(mean_abund = mean(Abundance), sd_abund = sd(Abundance)) |>
+  summarise(mean_abund = mean(Abundance), sd_abund = sd(Abundance), .groups = "drop") |>
   ungroup() |>
   group_by(Genus_label) |>
   filter(any(mean_abund > 0.009))
