@@ -1,6 +1,6 @@
-#####################
+####################################
 #  Notes on the origin of this script
-#####################
+####################################
 # This script has been adapted from a script written to handle 16S rRNA amplicon data (V3-V4 region).
 # Original sample type: boar semen - but could be used for any low-microbial biomass type sample data.
 #
@@ -303,8 +303,11 @@ physeq.pa <- transform_sample_counts(ps0,
                                      function(abund) 1*(abund>0))
 physeq.pa.neg <- prune_samples(sample_data(physeq.pa)[[control_column]] %in% negative_control_labels,
                                physeq.pa)
-physeq.pa.pos <- prune_samples(sample_data(!(physeq.pa)[[control_column]] %in% negative_control_labels,
-                               physeq.pa))
+physeq.pa.pos <- prune_samples(
+  !(sample_data(physeq.pa)[[control_column]] %in% negative_control_labels),
+  physeq.pa
+)
+
 # Make a data.frame of prevalence in positive and negative samples
 df.pa <- data.frame(pa.pos=taxa_sums(physeq.pa.pos), pa.neg=taxa_sums(physeq.pa.neg),
                     contaminant=contamdf.prev05$contaminant)
@@ -315,7 +318,7 @@ ggplot(data = df.pa, aes(x = pa.neg, y = pa.pos, color = contaminant)) +
   labs(
     title = "Prevalence of ASVs in Negative Controls vs. Biological Samples",
     subtitle = "Blue = contaminants; Red = non-contaminants",
-    caption = “This plot allows inspection of prevalence differences between negative controls and biological samples”,
+    caption = "This plot allows inspection of prevalence differences between negative controls and biological samples",
     colour = "Contaminant")
                                      
 # This plot should give you an indication as to how often the taxa identified as
