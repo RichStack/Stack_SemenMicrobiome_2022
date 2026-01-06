@@ -240,7 +240,7 @@ df$Index <- seq(nrow(df))
 # In this plot we are indicating the different sample-types by shape. 
 # You should amend the code if you wish to plot any controls, blanks, or environmental samples included in your dataset.
 
-ggplot(data = df, aes(x = Index, y = LibrarySize, shape = sampletype)) +
+ggplot(data = df, aes(x = Index, y = LibrarySize, shape = .data[[control_column]])) +
   geom_point(aes(), size = 2.5, alpha = 0.8) +
   labs(title = "Library Size against Samples",
        shape = "Sample Type") +
@@ -301,10 +301,10 @@ taxonomy_table_01
 # How many times were these taxa observed in all samples?
 physeq.pa <- transform_sample_counts(ps0,
                                      function(abund) 1*(abund>0))
-physeq.pa.neg <- prune_samples(sample_data(physeq.pa)$sampletype == "blank",
+physeq.pa.neg <- prune_samples(sample_data(physeq.pa)[[control_column]] %in% negative_control_labels,
                                physeq.pa)
-physeq.pa.pos <- prune_samples(sample_data(physeq.pa)$sampletype != "blank",
-                               physeq.pa)
+physeq.pa.pos <- prune_samples(sample_data(!(physeq.pa)[[control_column]] %in% negative_control_labels,
+                               physeq.pa))
 # Make a data.frame of prevalence in positive and negative samples
 df.pa <- data.frame(pa.pos=taxa_sums(physeq.pa.pos), pa.neg=taxa_sums(physeq.pa.neg),
                     contaminant=contamdf.prev05$contaminant)
@@ -1097,11 +1097,12 @@ P4 <- ggplot(alpha_df, aes(x = .data[[met_var]], y = Shannon$shannon)) +
 # We begin this exploration by analysing beta diversity.
 
 # A priority here is to explore beta diversity using different distance indices.
-# You might be interested in those that incorporate phylogenetic information such as
-# unifrac, but can also cover the other common and useful distances such as Bray Curtis
-# for completeness.
-
-# You should check the distribution of any metadata variables as follows
+# Different beta-diversity methods emphasize different properties of microbiome data. 
+# UniFrac incorporates phylogenetic relatedness, while CLR-based methods address compositionality. 
+# Discrepancies between these approaches can highlight whether observed differences are driven primarily by lineage-level shifts 
+# or by broader compositional structure, which are useful biological distinctions to be drawn from the data.
+                                           
+# To begin with you should check the distribution of any metadata variables as follows
 sd <- as(sample_data(final_physeq), "data.frame")
 
 ggplot(sd, aes(x = .data[[met_var]])) +
@@ -1237,127 +1238,39 @@ ggplot(pca_df, aes(x = PC1, y = PC2, color = .data[[met_var]])) +
          legend.text = element_text(size = 10)) +
   stat_ellipse()
 
-
+# Alternatively, CLR-transformed Euclidean distances can be used for PCoA or PERMANOVA; see references in README.
 
 ######################################################################
-#
-# Section 7: Section Bar plots and other taxonomic summaries
-#
+# SECTION 7: Bar plots and other taxonomic summaries
 ######################################################################
 
-# We are using the dataset for all samples, except low depth (<2000 reads)
-# genus_physeq_no_outliers
-ntaxa(genus_physeq_no_outliers)
-# 585
-# How many genera would be present after filtering?
-length(get_taxa_unique(genus_physeq_no_outliers, taxonomic.rank = "Genus"))
-## [1] 194
+# Quick recap of overall counts
+ntaxa(final_physeq)
+length(get_taxa_unique(final_physeq, taxonomic.rank = "Genus"))
 
-# Let's try the phyla prevalence plot again on the phyloseq object with outliers removed.
-# Result: a vector with one value per ASV.
-prevdf3 = apply(X = otu_table(genus_physeq_no_outliers),
-                MARGIN = ifelse(taxa_are_rows(genus_physeq_no_outliers), yes = 1, no = 2),
-                FUN = function(x){sum(x > 0)})
-# Now you create a data.frame where each row is an ASV and columns include:
-# Prevalence = number of samples where ASV is present
-# TotalAbundance = total read count across all samples
-# tax_table(ps0) = adds taxonomy data for each ASV
-# Add taxonomy and total read counts to this data.frame
-prevdf3 = data.frame(Prevalence = prevdf3,
-                     TotalAbundance = taxa_sums(genus_physeq_no_outliers),
-                     tax_table(genus_physeq_no_outliers))
-# Compute the total and average prevalences of the features in each phyla
-plyr::ddply(prevdf3, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
-# Subset to the remaining phyla
-prevdf4 = subset(prevdf3, Phylum %in% get_taxa_unique(genus_physeq_no_outliers, "Phylum"))
-ggplot(prevdf4, aes(TotalAbundance, Prevalence / nsamples(genus_physeq_no_outliers),color=Phylum)) +
-  # Include a guess for parameter
-  # geom_hline(yintercept = 0.05, alpha = 0.5, linetype = 2) + 
-  geom_point(size = 1, alpha = 0.7) +
-  scale_x_log10() +  xlab("Total Abundance") + ylab("Prevalence [Frac. Samples]") +
-  facet_wrap(~Phylum) +
-  labs(title = "Prevalence versus total counts of ASVs in Genus Amplicon dataset",
-       subtitle = "Dataset has been filtered of contaminants and low prevalence ASVs") +
-  theme_bw(base_size = 10) +
-  theme(text = element_text(size = 10),
-        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
-        axis.text.x = element_text(size = 7, face = "bold"),
-        plot.title = element_text(size = 12, face = "bold"),
-        plot.subtitle = element_text(size = 10),
-        legend.position = "none")
-ggsave("Phyla_ASV_prevalence_no_outliers.pdf", width = 8, height = 6, units = "in")
+# The physeq transformed to relative abundance is final_rel_physeq
 
-genus_glom = phyloseq::tax_glom(genus_physeq_no_outliers, "Genus", NArm = TRUE)
-# Finally let's repeat the phyla prevalence plot with the agglomerated phyloseq object
-prevdf5 = apply(X = otu_table(genus_glom),
-                MARGIN = ifelse(taxa_are_rows(genus_glom), yes = 1, no = 2),
-                FUN = function(x){sum(x > 0)})
-# Now you create a data.frame where each row is an ASV and columns include:
-# Prevalence = number of samples where ASV is present
-# TotalAbundance = total read count across all samples
-# tax_table(ps0) = adds taxonomy data for each ASV
-# Add taxonomy and total read counts to this data.frame
-prevdf5 = data.frame(Prevalence = prevdf5,
-                     TotalAbundance = taxa_sums(genus_glom),
-                     tax_table(genus_glom))
-# Compute the total and average prevalences of the features in each phyla
-plyr::ddply(prevdf5, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
-# Subset to the remaining phyla
-prevdf6 = subset(prevdf5, Phylum %in% get_taxa_unique(genus_glom, "Phylum"))
-ggplot(prevdf6, aes(TotalAbundance, Prevalence / nsamples(genus_glom),color=Phylum)) +
-  # Include a guess for parameter
-  # geom_hline(yintercept = 0.05, alpha = 0.5, linetype = 2) + 
-  geom_point(size = 1, alpha = 0.7) +
-  scale_x_log10() +  xlab("Total Abundance") + ylab("Prevalence [Frac. Samples]") +
-  facet_wrap(~Phylum) +
-  labs(title = "Prevalence versus total counts of ASVs in Genus Amplicon dataset",
-       subtitle = "Dataset has been filtered of contaminants and low prevalence ASVs") +
-  theme_bw(base_size = 10) +
-  theme(text = element_text(size = 10),
-        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
-        axis.text.x = element_text(size = 7, face = "bold"),
-        plot.title = element_text(size = 12, face = "bold"),
-        plot.subtitle = element_text(size = 10),
-        legend.position = "none")
-# Not sure what this tells us - obviously fewer ASVS as we already knew. Only point of interest to me
-# Is that the campylobacter phyla, which looked fairly populous is now formed of just two ASVs after
-# genus agglomeration. Campylobacter is obviously the most prevalent and it has risen up to show it is
-# present in almost half of the samples. V interesting. It is common in GI tract of animals, but has
-# also been found in reproductive tract of animals and is considered pathogenic.
+# Given that metabarcoding does not annotate at species level particularly well, 
+# you can choose to agglomerate taxa at the level of genus which will simplify visual summaries.
+# However, we will begin to explore the taxonomy at the level of Phylum.
 
-# Going to use the genus_physeq_no_outliers object, but transformed to relative abundance here
-genus_rel=transform_sample_counts(genus_physeq_no_outliers, function(x){x / sum(x)})
-# agglomerate taxa
-phyglom <- tax_glom(genus_rel, taxrank = 'Phylum', NArm = FALSE)
+phyglom <- tax_glom(final_rel_physeq, taxrank = 'Phylum', NArm = FALSE)
 phymelt <- psmelt(phyglom)
 # change to character for easy-adjusted level
 phymelt$phylum <- as.character(phymelt$Phylum)
-
-# Let's just get phyla stats here for semen:
-# Filter to just Firmicutes and desired sample type
-firm_df <- phymelt |>
-  filter(Phylum == "Firmicutes", sampletype == "semen")
-
-# Calculate mean and SD of Firmicutes relative abundance within semen samples
-firm_df |>
-  group_by(sampletype) |>
-  summarise(mean_abundance = mean(Abundance),
-            sd_abundance = sd(Abundance),
-            n = n())
-# semen, mean_abundance firmicutes 0.772, sd 0.176
-
-# First step is to try a faceted plot of all sample types
+                                 
+# To create a faceted plot according to your metadata variable defined in the config file:
 stphymelt <- phymelt |>
   group_by(Sample, Phylum) |>
   mutate(median=median(Abundance))
-#to get the same rows together
+# To get the same rows together
 stphymelt_sum <- stphymelt |>
-  group_by(Sample, sampletype, Phylum) |>
+  group_by(Sample, .data[[met_var]], Phylum) |>
   summarise(Abundance=sum(Abundance))
-# Example: order by Firmicutes abundance
+# Example: order by Firmicutes abundance - you can change to whatever your most abundant Phylum is.
 ordered_samples <- stphymelt_sum |>
   filter(Phylum == "Firmicutes") |>
-  arrange(sampletype, desc(Abundance)) |>
+  arrange(.data[[met_var]], desc(Abundance)) |>
   pull(Sample)
 stphymelt_sum$Sample <- factor(stphymelt_sum$Sample, levels = ordered_samples)
 # Now make the plot
@@ -1369,7 +1282,7 @@ stphymelt_sum |>
   ggplot(aes(x = Sample, y = Abundance, fill = Phylum)) + 
   geom_bar(stat = "identity", colour = "black", linewidth = 0.1, aes(fill=Phylum)) + 
   labs(x = "", y = "Relative Abundance (%)") +
-  facet_grid(~ sampletype, scales= "free_x", space = "free_x") +
+  facet_grid(~ .data[[met_var]], scales= "free_x", space = "free_x") +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
   scale_fill_igv() +
     theme_bw(base_size = 10) +
@@ -1382,72 +1295,18 @@ stphymelt_sum |>
           axis.text.x.bottom = element_blank(),
           text = element_text(size = 10),
           plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
-          plot.title = element_text(size = 14, face = "bold"),
-          plot.subtitle = element_text(size = 10)) +
-    labs(title = "Relative Abundance of Phyla in Boar Dataset",
-       subtitle = "Samples have been grouped by Sample Type")
-ggsave("Phyla_sampletype.png", width = 7, height = 5, dpi = 300)
-ggsave("Phyla_sampletype.pdf", width = 8, height = 6, units = "in")
-# Now let's look at the semen samples by Site
-phymelt <- psmelt(phyglom)
-# change to character for easy-adjusted level
-phymelt$phylum <- as.character(phymelt$Phylum)
-phymelt <- phymelt |>
-  filter(sampletype == "semen") |>
-  group_by(Sample, Phylum) |>
-  mutate(median=median(Abundance))
-# select group median > 1
-keep <- unique(phymelt$Phylum[phymelt$median > 0.01])
-phymelt$Phylum[!(phymelt$Phylum %in% keep)] <- "< 1%"
-#to get the same rows together
-phymelt_sum <- phymelt |>
-  filter(sampletype == "semen") |>
-  group_by(Sample, Site, Phylum) |>
-  summarise(Abundance=sum(Abundance))
-# Example: order by Firmicutes abundance
-ordered_samples <- phymelt_sum |>
-  filter(Phylum == "Firmicutes") |>
-  arrange(Site, desc(Abundance)) |>
-  pull(Sample)
-phymelt_sum$Sample <- factor(phymelt_sum$Sample, levels = ordered_samples)
-phymelt_sum |>
-  group_by(Phylum) |>
-  mutate(mean_abund = mean(Abundance)) |>
-  ungroup() |>
-  mutate(Phylum = fct_reorder(Phylum, mean_abund)) |>
-  ggplot(aes(x = Sample, y = Abundance, fill = Phylum)) + 
-  geom_bar(stat = "identity", colour = "black", linewidth = 0.1, aes(fill=Phylum)) + 
-  labs(x="", y="%") +
-  facet_wrap(~ Site, scales= "free_x", nrow=1) +
-  theme_classic(base_size = 10) + 
-  scale_fill_igv() +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
-  theme(strip.background = element_blank(),
-        strip.text.x.top = element_text(size = 10),
-        strip.text = element_text(face = "bold"),
-        axis.ticks.x = element_blank(),
-        legend.title = element_blank(),
-        text = element_text(size = 10),
-        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 10),
-        axis.text.x.bottom = element_text(angle = -90)) +
-  labs(title = "Relative Abundance of Phyla in Semen Samples",
-       subtitle = "Outlier samples are restricted to Boston",
-       caption = "Sample 0839K is outlier in beta-diversity plots",
-       y = "Relative Abundance (%)")
-ggsave("Grouped_semen_phyla_bar.pdf", width = 8, height = 6, units = "in")
+          plot.title = element_text(size = 14, face = "bold")) +
+    labs(title = "Relative Abundance of Phyla")
 
-# Genus for semen
-genusglom <- tax_glom(genus_rel, taxrank = 'Genus', NArm = FALSE)
+# Barplot of genera
+genusglom <- tax_glom(final_rel_physeq, taxrank = 'Genus', NArm = FALSE)
 ps.melt.genus <- psmelt(genusglom)
 # change to character for easy-adjusted level
 ps.melt.genus$Genus <- as.character(ps.melt.genus$Genus)
 ps.melt.genus <- ps.melt.genus |>
-  filter(sampletype == "semen") |>
-  group_by(Sample, Site, Class, Order, Family, Genus) |>
+  group_by(Sample, .data[[met_var]], Class, Order, Family, Genus) |>
   mutate(median=median(Abundance))
-# Create a new label column
+# Create a new label column - so that you include any unannotated ASVs (at genus level) in your plot with LCA label
 ps.melt.genus$Genus_label <- with(ps.melt.genus,
                                       ifelse(
                                         is.na(Genus) | Genus == "uncultured" | Genus == "" | Genus == "NA",
@@ -1459,17 +1318,19 @@ ps.melt.genus$Genus_label <- with(ps.melt.genus,
                                                              paste0("Class: ", Class),
                                                              "Unclassified"))),
                                         Genus))
-# select group median > 1
+# select group median  - here you will need to play with the median statistic, as the readability of the plot will be very much
+# dependent on the richness of the samples. In my dataset, I had to keep the median higher than I liked, in order to create a readable plot.
+# This issue, and how to counter it, will be explored further below.
 keep <- unique(ps.melt.genus$Genus_label[ps.melt.genus$median > 0.075])
 ps.melt.genus$Genus_label[!(ps.melt.genus$Genus_label %in% keep)] <- "< 7.5%"
 #to get the same rows together
 ps.melt.genus_sum <- ps.melt.genus |>
-  group_by(Sample,Site,Genus_label) |>
+  group_by(Sample, .data[[met_var]], Genus_label) |>
   summarise(Abundance=sum(Abundance))
 # Example: order by Firmicutes abundance
 ordered_samples <- ps.melt.genus_sum |>
   filter(Genus_label == "< 7.5%") |>
-  arrange(Site, desc(Abundance)) |>
+  arrange(.data[[met_var]], desc(Abundance)) |>
   pull(Sample)
 ps.melt.genus_sum$Sample <- factor(ps.melt.genus_sum$Sample, levels = ordered_samples)
 ps.melt.genus_sum |>
@@ -1480,7 +1341,7 @@ ps.melt.genus_sum |>
   ggplot(aes(x = Sample, y = Abundance, fill = Genus_label)) + 
   geom_bar(stat = "identity", colour = "black", linewidth = 0.1, aes(fill=Genus_label),
            show.legend = F) + 
-  facet_wrap(~ Site, scales= "free_x", nrow=1) +
+  facet_wrap(~ .data[[met_var]], scales= "free_x", nrow=1) +
   theme_classic() + 
   scale_fill_igv() +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
@@ -1491,124 +1352,21 @@ ps.melt.genus_sum |>
         axis.ticks.x = element_blank(),
         text = element_text(size = 10),
         plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
-        plot.title = element_text(size = 12, face = "bold"),
-        plot.subtitle = element_text(size = 10)) +
-  labs(title = "Relative Abundance of Semen Genera",
+        plot.title = element_text(size = 12, face = "bold")) +
+  labs(title = "Relative Abundance of Genera",
        subtitle = "Rare taxa with median relative abundance < 7.5% have been agglomerated",
        x = "Samples",
        y = "Relative Abundance (%)")
-ggsave("semen_genus_bar.pdf", width = 8, height = 6, units = "in")
-# Issue here is that the samples are too full of variation - and difficult to visualise main taxa.
 
+# If you have a similar issue with your data you can try plotting the top 20 taxa.
+# I have combined this approach with a bubble plot
 # Reset the objects
-genusglom <- tax_glom(genus_rel, taxrank = 'Genus', NArm = FALSE)
+genusglom <- tax_glom(final_rel_physeq, taxrank = 'Genus', NArm = FALSE)
 ps.melt.genus <- psmelt(genusglom)
-#to get the same rows together
-ps.melt.genus_sum <- ps.melt.genus |>
-  group_by(Sample,Site, Class, Order, Family, Genus) |>
-  summarise(Abundance=sum(Abundance))
-# Create a new label column
-ps.melt.genus_sum$Genus_label <- with(ps.melt.genus_sum,
-                                      ifelse(
-                                        is.na(Genus) | Genus == "uncultured" | Genus == "" | Genus == "NA",
-                                        ifelse(!is.na(Family) & Family != "",
-                                               paste0("Family: ", Family),
-                                               ifelse(!is.na(Order) & Order != "",
-                                                      paste0("Order: ", Order),
-                                                      ifelse(!is.na(Class) & Class != "",
-                                                             paste0("Class: ", Class),
-                                                             "Unclassified"))),
-                                        Genus))
-# Calculate mean abundance per informative label
-top_genera <- ps.melt.genus_sum %>%
-  group_by(Genus_label) %>%
-  summarise(mean_abund = mean(Abundance)) %>%
-  arrange(desc(mean_abund)) %>%
-  slice_head(n = 10) %>%
-  pull(Genus_label)
-# Set all other genera to "Other"
-ps.melt.genus_sum$Genus_label[!(ps.melt.genus_sum$Genus_label %in% top_genera)] <- "Other"
-# After assigning "Other" to low-abundance genera:
-ps.melt.genus_sum$Genus_label <- as.character(ps.melt.genus_sum$Genus_label)
-# Set factor levels for plotting
-ps.melt.genus_sum$Genus_label <- factor(
-  ps.melt.genus_sum$Genus_label,
-  levels = c(top_genera, "Other")
-)
-# Plot
-ggplot(ps.melt.genus_sum, aes(x = Sample, y = Abundance, fill = Genus_label)) +
-  geom_bar(stat = "identity", colour = "black", width = 0.7) +
-  facet_wrap(~ Site, scales= "free_x", nrow=1) +
-  theme_classic() +
-  scale_fill_igv() +
-  theme(strip.background = element_blank(), axis.text.x.bottom = element_text(angle = -90)) +
-  labs(title = "Top 10 Genera in Semen Samples",
-       subtitle = "All other genera grouped as 'Other'",
-       caption = "Rectangles within 'Other' represent distinct taxa")
-ggsave("Semen_top_10.png", scale = 2)
-# Notes on the top 10 genera
-# E coli - the most abundant taxa in the entire dataset (not just semen), this is likely because
-# 1: it was present in mock samples, and very overrepresented in cell mocks. Plus it was also
-# present in negative control - so some wariness about this ASV - difficult to interpret.
-# We know that this is biologically plausible as it is easy to culture from semen samples yet is
-# also a potential contaminant from gut/faecal and there is abundant presence in other niches .
-
-# Family: Carnobacteriaceae, Genus unclassified. Most abundant in semen samples. 2nd in all data.
-# BLAST search reveals uncultured organisms as top hits.
-# Carnobacteriaceae, a family of the order Lactobacillales, within the phylum Firmicutes, embraces 
-# the genera Carnobacterium, Alkalibacterium, Allofustis, Alloiococcus, Atopobacter, Atopococcus, 
-# Atopostipes, Bavariicoccus, Desemzia, Dolosigranulum, Granulicatella, Isobaculum, Jeotgalibaca, 
-# Lacticigenium, Marinilactibacillus, Pisciglobus, and Trichococcus.
-# Gram positive and facultative anaerobes.
-# These have been mainly characterised via sequencing - so this result is not surprising. Prior to
-# NGS approaches - remarked upon as abberant lactobacilli. Common in animal hosts, and as other
-# lactic acid bacteria - main substrate is glucose. Definitely found in other boar semen microbiome
-# studies - eg Ngo et al 2023.
-# There is not much to go on here.
-
-# Dolosicoccus - Gram postive facultative anaerobe. relatively newly characterised - offshoot of 
-# Streptococci (i.e. as taxonomy has expanded alongside NGS approaches). Closely related to other 
-# members of this family Aerococcaceae. Dolosicoccus has not been reported in previous boar semen 
-# studies, although there have been examples of uncharacterised members of this family eg: Ngo et al 2023. 
-# In addition it has been reported in boar intestinal microbiota at high prevalence McCormack et al 2019.
-
-# Streptococcus - commonly found as part of animal and human seminal microbiota. Despite this found
-# in other niches here and potential for contaminant.
-
-# Class: Bacilli - unclassified, order, family and genera. BLAST search reveals many uncultured rRNA 
-# sequences and a few Aerococcus sprinkled into the results. Appears, as with Dolosicoccus, related
-# but not enough sequence difference to annotate at higher levels. However, perfectly reasonable
-# that more bacilli are in the microbiota, as these are well reported in previous studies.
-
-# W5303 - not much information about this mysterious bacteria out there, except that it regularly
-# appears in sequencing data from animal reproductive microbiomes - particularly semen, including,
-# cattle (Cojkic 2021), horses (Malaluang 2024) and ewes. Family XI is a placeholder name, representing
-# a clade of gram positive anaerobes - previously listed in the order of Clostridiales. Other closely
-# related bacteria include Finegoldia and Anaerococcus which are all well represented in NGS
-# output of animal related reproductive microbiomes. These tend to be gram positive obligate anaerobes.
-
-# Lactobacillis - well characterised and expected here.
-
-# Clostridium sensus stricto 1. This is potentially an environmental contaminant, as it appeared 
-# in high prevalence on gloves and skin swabs. As clostridia produce spores, these will be environmentally
-# resistant and contamination will be easy.Action here - review with venn diagram, and possibly look
-# at removing this from semen data.
-
-# Psychrobacter - an obvious contender for contaminant organism. Environmentally resistant and present
-# in skin and glove swabs.
-
-# Gram positive and aerobic - commonly found in semen microbiome studies. However, still found in 
-# skin and glove swabs. Despite plausibility could very well be introduced environmentally.
-
-# Let's try a bubble plot
-library(forcats)
-# Reset the objects
-genusglom <- tax_glom(genus_rel, taxrank = 'Genus', NArm = FALSE)
-ps.melt.genus <- psmelt(genusglom)
-#to get the same rows together
+# To get the same rows together
 ps.melt.genus <- ps.melt.genus |>
-  group_by(Sample, sampletype, Site, Class, Order, Family, Genus)
-# Create a new label column
+  group_by(Sample, .data[[met_var]], Class, Order, Family, Genus)
+# Create a new label column as before
 ps.melt.genus$Genus_label <- with(ps.melt.genus,
                                       ifelse(
                                         is.na(Genus) | Genus == "uncultured" | Genus == "" | Genus == "NA",
@@ -1630,39 +1388,26 @@ top_genera <- ps.melt.genus |>
 
 bubble_data <- ps.melt.genus |>
   filter(Genus_label %in% top_genera$Genus_label)
-# Count true zero abundances
-sum(bubble_data$Abundance == 0) # 224
-# Or better: check the minimum non-zero value
-min(bubble_data$Abundance[bubble_data$Abundance > 0]) #0.00014856
-# Ok, I think zeros are being plotted as bubbles here.
-# Try this
+# Ensure that zeros don't get plotted
 bubble_data <- bubble_data |>
   mutate(present = ifelse(Abundance > 0.001, "Present", "Absent"))
 
-# 1.1  work out the ordering vector
-semen_order <- ps.melt.genus |>
-  filter(sampletype == "semen") |>          # look only at semen samples
+# Work out the ordering vector
+bubble_order <- ps.melt.genus |>
   group_by(Genus_label) |>
-  summarise(semen_mean = mean(Abundance), .groups = "drop") |>
-  arrange(desc(semen_mean)) |>
+  summarise(bubble_mean = mean(Abundance), .groups = "drop") |>
+  arrange(desc(bubble_mean)) |>
   pull(Genus_label)
 
-# 1.2  convert Genus_label into an ordered factor
+# Convert Genus_label into an ordered factor
 bubble_data <- bubble_data |>
-  mutate(Genus_label = factor(Genus_label, levels = semen_order))
-# Before plotting consider using raw counts
-libsize <- sample_sums(genus_physeq_no_outliers)              # your counts object
-depth_df <- data.frame(Sample = names(libsize),
-                       TotalReads = as.numeric(libsize))
-bubble_data <- bubble_data |>
-  left_join(depth_df, by = "Sample") |>
-  mutate(ReadCount = round(Abundance * TotalReads))
+  mutate(Genus_label = factor(Genus_label, levels = bubble_order))
 
 ggplot(bubble_data, aes(x = Sample, y = Genus_label)) +
   geom_point(aes(size = Abundance, fill = Abundance, shape = present), alpha = 0.8) +
   scale_shape_manual(values = c("Absent" = NA, "Present" = 21)) +
   scale_size_area(max_size = 6) +
-  facet_grid(~ sampletype,
+  facet_grid(~ .data[[met_var]],
             scales = "free_x",
             space  = "free_x",
             drop   = TRUE) +
@@ -1670,7 +1415,7 @@ ggplot(bubble_data, aes(x = Sample, y = Genus_label)) +
   theme_bw(base_size = 10) +
   labs(x = "Sample",
        y = "Genus",
-       title = "Bubble plot of Top 20 Genera in Boar Dataset",
+       title = "Bubble plot of Top 20 Genera",
        subtitle = "Bubble size and colour represents relative abundance",
        fill = "Relative Abundance",
        size = "Relative Abundance",
@@ -1686,27 +1431,33 @@ ggplot(bubble_data, aes(x = Sample, y = Genus_label)) +
         plot.title = element_text(size = 14, face = "bold"),
         plot.subtitle = element_text(size = 10),
         axis.text.x.bottom = element_blank())
-ggsave("Top20_bubble.pdf", width = 10, height = 8, units = "in")  
-ggsave("Top20_bubble.png", width = 9, height = 7, dpi = 300)
+
+# The faceting of the bubble plot allows you to compare the relative abundances of top 20 genera by your chosen metadata
+# variable. However, it also retains details of individual samples, so you should be able to see outliers, and is also useful if some
+# of your metadata groups have smaller sample numbers. For example, when comparing environmental niches, I had fewer of each sample-type
+# in comparison to the main semen dataset, but this plot allowed me to inspect any obvious trends in shared/unique taxa.
+                                 
 # Now let's explore dot plots
-#to get the same rows together and summarise mean abundance
+# We prepare the dataset as before:
 genus_summary <- ps.melt.genus |>
-  filter(sampletype == "semen") |>
-  group_by(Site, Genus_label) |>
+  group_by(.data[[met_var]], Genus_label) |>
   summarise(mean_abund = mean(Abundance), sd_abund = sd(Abundance)) |>
   ungroup() |>
   group_by(Genus_label) |>
   filter(any(mean_abund > 0.009))
-# Plot
+# Here the level of filtering should be adjusted to one that suits your dataset.
+# The method ensures that taxa that may have an abundance of zero in one of your metadata groups, will still get plotted
+# and not dropped from the dataset
+
 genus_summary |>
   filter(mean_abund > 0) |>  # remove zero values
-  ggplot(aes(x = mean_abund, y = fct_reorder(Genus_label, mean_abund), color = Site)) +
+  ggplot(aes(x = mean_abund, y = fct_reorder(Genus_label, mean_abund), color = .data[[met_var]])) +
   geom_point(position = position_dodge(width = 0.5)) +
   geom_errorbarh(aes(xmin = mean_abund - sd_abund, xmax = mean_abund + sd_abund),
                  position = position_dodge(width = 0.5), height = 0.2) +
   scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
   labs(x = "Mean Relative Abundance", y = "Genus",
-       title = "Mean Relative Abundance of Semen Genera, by Site",
+       title = "Mean Relative Abundance of Genera",
        subtitle = "Filtering threshold > 0.009 mean abundance") +
   theme_classic(base_size = 10) +
   scale_color_igv() +
@@ -1715,68 +1466,6 @@ genus_summary |>
         plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
         plot.title = element_text(size = 14, face = "bold"),
         plot.subtitle = element_text(size = 10))
-ggsave("Semen_dot.pdf", width = 8, height = 6, units = "in")
-# This is interesting, most abundance genera are shared - mean abundances do not differ enormously.
-# Real differences occur by site at low abundance. Need to tie this in somehow with unique genera.
-# try this again, but this time include all sample types
-# Now let's explore dot plots
-#to get the same rows together and summarise mean abundance
-genus_summary <- ps.melt.genus |>
-  group_by(sampletype, Genus_label) |>
-  summarise(mean_abund = mean(Abundance), sd_abund = sd(Abundance)) |>
-  filter(mean_abund > 0.01)  # Optional filter
-# Plot
-genus_summary |>
-  ggplot(aes(x = mean_abund, y = fct_reorder(Genus_label, mean_abund), color = sampletype)) +
-  geom_point(position = position_dodge(width = 0.5)) +
-  geom_errorbarh(aes(xmin = mean_abund - sd_abund, xmax = mean_abund + sd_abund),
-                 position = position_dodge(width = 0.5), height = 0.2) +
-  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
-  labs(x = "Mean Relative Abundance", y = "Genus",
-       title = "Mean Relative Abundance of Semen Genera, by Site",
-       subtitle = "Filtering threshold > 0.1 mean abundance") +
-  theme_classic(base_size = 10) +
-  scale_color_igv() +
-  theme(legend.title = element_text(size = 10, face = "bold"),
-        text = element_text(size = 10),
-        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm"),
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 10))
-ggsave("Semen_dot.pdf", width = 8, height = 6, units = "in")
-
-# Finally, genus level for the other samples
-genusglom <- tax_glom(genus_rel, taxrank = 'Genus', NArm = FALSE)
-ps.melt.genus <- psmelt(genusglom)
-# change to character for easy-adjusted level
-ps.melt.genus$Genus <- as.character(ps.melt.genus$Genus)
-
-ps.melt.genus <- ps.melt.genus |>
-  filter(sampletype != "semen") |>
-  group_by(Sample, Genus) |>
-  mutate(median=median(Abundance))
-# select group median > 1
-keep <- unique(ps.melt.genus$Genus[ps.melt.genus$median > 0.05])
-ps.melt.genus$Genus[!(ps.melt.genus$Genus %in% keep)] <- "< 5%"
-#to get the same rows together
-ps.melt.genus_sum <- ps.melt.genus |>
-  group_by(Sample,sampletype,Genus) |>
-  summarise(Abundance=sum(Abundance))
-ps.melt.genus_sum |>
-  group_by(Genus) |>
-  mutate(mean_abund = mean(Abundance)) |>
-  ungroup() |>
-  mutate(Genus = fct_reorder(Genus, mean_abund)) |>
-  ggplot(aes(x = Sample, y = Abundance, fill = Genus)) + 
-  geom_bar(stat = "identity", colour = "black", width = 0.7, aes(fill=Genus)) + 
-  labs(x="", y="%") +
-  facet_wrap(~ sampletype, scales= "free_x", nrow=1) +
-  theme_classic() + 
-  scale_fill_igv() +
-  theme(strip.background = element_blank(), 
-        axis.text.x.bottom = element_text(angle = -90)) +
-  labs(title = "Relative Abundance of Genera in Associated Samples",
-       subtitle = "Rare taxa with median relative abundance < 5% have been agglomerated")
-ggsave("other_genus_bar.png", scale = 2)
 
 ##################################################################################
 #
