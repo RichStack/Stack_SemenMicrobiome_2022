@@ -87,8 +87,12 @@ log_mock_sample <- "LogMC"
 # Distance metric for beta diversity
 beta_distance <- "wunifrac"
 
-# Metadata variable to test
+# Metadata variable to test - suggestion here is to explore environmental samples as recommended in the readme
 met_var <- "sampletype"
+
+# Define your main sample-type of interest, if you have included environmental controls
+
+main_group <- "semen"
 
 # ----------------------------
 # Plotting defaults
