@@ -1472,74 +1472,62 @@ genus_summary |>
         plot.subtitle = element_text(size = 10))
 
 ##################################################################################
-#
-# 8. Exploration of shared taxa across niches
-#
+# SECTION 8: Exploration of shared taxa across niches
 ##################################################################################
-# Begin this section by exploring using a simple Venn plot.
+# This section is specifically written to allow for exploration of adjacent environmental niches.
+# After including environmental controls into a study for the first time, I became convinced that this design
+# is absolutely essential to any kind of exploration of low-microbial-biomass samples
+# The code below will allow you to explore both shared and unshared taxa across the environmental sample-types.
 
-# Agglomerate at genus level (or other, e.g., "Phylum", "ASV" for OTU level)
-phy_genus <- tax_glom(genus_rel, taxrank = "Genus")
-# Extract presence/absence per sample
+# Begin this section by using a simple Venn plot.
+
+# Agglomerate at genus level
+phy_genus <- tax_glom(final_rel_physeq, taxrank = "Genus")
+
+# Extract OTU table and convert to presence/absence
 otu_mat <- otu_table(phy_genus)
-otu_mat[otu_mat > 0] <- 1  # Convert to presence/absence
-otu_mat <- as.data.frame(t(otu_mat))  # Samples as rows
+otu_mat[otu_mat > 0] <- 1
+otu_mat <- as.data.frame(t(otu_mat))  # samples as rows
+
+# Extract metadata
 sample_data_df <- as(sample_data(phy_genus), "data.frame")
 
-# Add sample type info
-otu_mat$sampletype <- sample_data_df$sampletype
-# Split by sampletype and get union of present taxa per group
-venn_input <- otu_mat %>%
-  group_by(sampletype) %>%
-  summarise(across(where(is.numeric), sum)) %>%
-  column_to_rownames("sampletype") %>%
+# Add sample-type column defined in config (met_var)
+otu_mat[[met_var]] <- sample_data_df[[met_var]]
+
+# Summarise presence across samples within each sample-type
+venn_input <- otu_mat |>
+  group_by(.data[[met_var]]) |>
+  summarise(across(where(is.numeric), sum), .groups = "drop") |>
+  column_to_rownames(met_var) |>
   as.matrix()
 
-# Convert sums to presence/absence (≥1 means present in that type)
+# Convert summed counts to presence/absence per niche
 venn_input[venn_input >= 1] <- 1
 
-# Create list for Venn diagram
+# Create list of taxa per niche
 venn_list <- apply(venn_input, 1, function(x) names(which(x == 1)))
 
-## Current names (check with):
-names(venn_list)
-# [1] "boarswab"  "extender"  "gloveswab" "semen" 
-
-# --- give them whatever labels you prefer -----------------------------
-names(venn_list) <- c("Boar skin swab",
-                      "Extender",
-                      "Glove swab",
-                      "Semen")
-
-
 # Plot Venn
-ggvenn(venn_list, text_size = 3, set_name_size = 3, stroke_size   = 0.7) +
-  labs(title = "Venn diagram of shared taxa within 4 niches at 2 boar studs",
-       subtitle = "A majority of taxa are unique to semen") +
-  theme_classic(base_size = 10) +
-  scale_color_igv() +
-  theme(text = element_text(size = 10),
-        plot.margin = ggplot2::margin(0.5, 0.5, 0.5, 0.5, "cm"),
-        plot.title = element_text(size = 12, face = "bold"),
-        plot.subtitle = element_text(size = 10))
-ggsave("niche_venn.png", width = 7, height = 5, dpi = 300)
-ggsave("niche_venn.pdf", width = 8, height = 6, units = "in")
-# The Venn diagram shows us that we clearly have shared taxa and some unique to semen,
-# but we need to explore more about these particular taxa.
+ggvenn(
+  venn_list,
+  text_size = 3,
+  set_name_size = 3,
+  stroke_size = 0.7
+) +
+  labs(title = "Shared and unique taxa across environmental niches") +
+  theme_classic(base_size = 10)
 
-# First look at abundance bar plots of shared taxa.
+# The Venn diagram should hopefully shows you that you have shared taxa and some unique to your main sample-type,
+# It is important to note that the venn shows where taxa occur in at least one sample per sample-type. It is not showing
+# per sample counts.
 
-# Find genera shared by all groups (intersection)
-shared_genera <- Reduce(intersect, venn_list)
-print(shared_genera)
-# Find genera unique to a group (e.g., "Semen")
-unique_semen <- setdiff(venn_list[["Semen"]], 
-                        unlist(venn_list[names(venn_list) != "Semen"]))
-print(unique_semen)
+# Next we explore more about these particular taxa.
 
 # 1. Agglomerate at genus level and melt
-ps.melt.genus <- psmelt(genusglom)
+ps.melt.genus <- psmelt(phy_genus)
 ps.melt.genus$Genus <- as.character(ps.melt.genus$Genus)
+# As before, create a best taxonomy label to obtain LCA annotation
 ps.melt.genus$Best_Taxonomy <- ifelse(
   !is.na(ps.melt.genus$Genus) & ps.melt.genus$Genus != "",
   paste0(ps.melt.genus$Genus),
@@ -1558,266 +1546,62 @@ ps.melt.genus$Best_Taxonomy <- ifelse(
     )
   )
 ps.melt.genus$Best_Taxonomy <- as.character(ps.melt.genus$Best_Taxonomy)
-# 2. Calculate mean abundance per Genus per sampletype
-genus_abund <- ps.melt.genus %>%
-  group_by(sampletype, Best_Taxonomy) %>%
-  summarise(mean_abund = mean(Abundance),sd_abund = sd(Abundance), .groups = "drop")
 
-# 3. Identify rare genera (mean abundance <1% across all sampletypes)
-rare_genera <- genus_abund |>
-  group_by(Best_Taxonomy) |>
-  summarise(overall_mean = mean(mean_abund)) |>
-  filter(overall_mean < 0.01) |>
-  pull(Best_Taxonomy)
-
-# 4. Assign "< 1%" to rare genera
-genus_abund$Best_Taxonomy[genus_abund$Best_Taxonomy %in% rare_genera] <- "< 1%"
-
-# 5. Remove "< 1%" from further analysis (optional, for clarity)
-genus_abund_filtered <- genus_abund |>
-  filter(Best_Taxonomy != "< 1%")
-
-# 6. Presence/absence table for shared genera logic
-genus_pa <- ps.melt.genus %>%
-  group_by(sampletype, Best_Taxonomy) %>%
-  summarise(present = sum(Abundance) > 0, .groups = "drop") %>%
-  filter(present)
-# 7. Find genera present in semen and at least one other sampletype
-genus_in_semen <- genus_pa |>
-  group_by(Best_Taxonomy) |>
-  summarise(
-    in_semen = any(sampletype == "semen"),
-    n_sampletypes = n_distinct(sampletype)
-  ) |>
-  filter(in_semen, n_sampletypes >=2) |>
-  pull(Best_Taxonomy)
-
-# 8. Now filter the abundance table for genera of interest
-shared_with_semen_abund <- genus_abund_filtered |>
-  filter(Best_Taxonomy %in% genus_in_semen)
-# 9. Order Genus factor by overall mean abundance
-genus_order <- shared_with_semen_abund %>%
-  group_by(Best_Taxonomy) %>%
-  summarise(total = sum(mean_abund)) %>%
-  arrange(desc(total)) %>%
-  pull(Best_Taxonomy)
-shared_with_semen_abund$Best_Taxonomy <- factor(shared_with_semen_abund$Best_Taxonomy, levels = genus_order)
-# 10. Plot
-ggplot(shared_with_semen_abund, aes(x = sampletype, y = mean_abund, fill = Best_Taxonomy)) +
-  geom_bar(stat = "identity", position = "dodge") +
-  facet_wrap(~ Best_Taxonomy, scales = "free_y") +
-  labs(title = "Abundance of Genera shared between Semen and at least one other sample type",
-       subtitle = "Genera with mean abundance per sample type <1% have been filtered out",
-       x = "Sample Type",
-       y = "Mean relative abundance",
-       fill = "Genus") +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_igv()
-ggsave("Abundance_shared_genera.png", scale = 2)
-# Issue with this plot is that information on directionality is unavailable.
-# We might guess that taxa that are more abundant in semen are more likely to originate
-# in these samples, but this is still just an assumption.
-# I have made notes on most of these, but in addition we can see that
-# Jeotgalicoccus - not associated with host microbiomes - potentially
-# environmental
-# Acidothermus - potentially environmental
-# HT002 - a lactobacillus species
-# Turicibacter - common gut commensal of animals - found in faeces, so 
-# lots of potential for environmental contamination.
-# Terrisporobacter - gut commensal and produces endospores - likely
-# environmental contaminant.
-# Jeotgalibaca - isolated from pig joints! Full habitat unknown.
-# Enhydrobacter - likely contaminant as predominantly in extender.
-# Now we explore taxa Unique to Semen
-# 1. Calculate mean abundance per Genus per sampletype
+# Calculate mean abundance per Genus per sampletype
 genus_abund <- ps.melt.genus |>
-  group_by(sampletype, Best_Taxonomy) |>
-  summarise(mean_abund = mean(Abundance), sd_abund = sd(Abundance), .groups = "drop")
-# 2. Presence/absence table
+  group_by(.data[[met_var]], Best_Taxonomy) |>
+  summarise(mean_abund = mean(Abundance),sd_abund = sd(Abundance), .groups = "drop")
+                   
+# Presence/absence table for shared genera logic
 genus_pa <- ps.melt.genus |>
-  group_by(sampletype, Best_Taxonomy) |>
+  group_by(.data[[met_var]], Best_Taxonomy) |>
   summarise(present = sum(Abundance) > 0, .groups = "drop") |>
   filter(present)
-# 3. Find genera unique to semen
-genus_unique_semen <- genus_pa |>
+
+# Now we explore genera unique to main_group
+genus_unique_main <- genus_pa |>
   group_by(Best_Taxonomy) |>
   summarise(
-    unique_semen = all(sampletype == "semen"),
-    n_sampletypes = n_distinct(sampletype)
+    unique_main = all(.data[[met_var]] %in% main_group),
+    n_sampletypes = n_distinct(.data[[met_var]]),
+    .groups = "drop"
   ) |>
-  filter(unique_semen, n_sampletypes == 1) |>
+  filter(unique_main, n_sampletypes == 1) |>
   pull(Best_Taxonomy)
-# 4. Calculate prevalence in semen samples
-prevalence <- ps.melt.genus |>
-  filter(sampletype == "semen") |>
-  group_by(Best_Taxonomy) |>
-  summarise(prevalence = sum(Abundance > 0), .groups = "drop")
-# 5. Filter abundance table for unique semen genera, only for semen sampletype
-semen_unique_abund <- genus_abund |>
-  filter(Best_Taxonomy %in% genus_unique_semen, sampletype == "semen") |>
-  left_join(prevalence, by = "Best_Taxonomy")
-# 6. Filter for genera present in >3 semen samples
-semen_unique_abund_filtered <- semen_unique_abund |>
-  filter(prevalence > 2)
-# 7. Plots
-semen_unique_abund_filtered |>
-  ggplot(aes(y = prevalence, x = mean_abund, label = Best_Taxonomy)) +
-  geom_point() +
-  geom_text_repel(max.overlaps = 20) +
-  labs(title = "Unique-to-Semen Genera: Prevalence vs Mean Abundance",
-       subtitle = "Mean Abundance calculated across all semen samples",
-       x = "Prevalence (# of semen samples)",
-       y = "Mean Abundance") +
-  theme_bw()
-ggsave("semen_unique_genera_repel.png", scale = 3)
-# Also write the semen_unique_abundance table to csv
-write.csv(semen_unique_abund, file = "semen_unique_abundance.csv")
 
-# Recalculate abundance, but this time per sample, in order to capture 
-# rare taxa for comparison
-# 1. Calculate mean abundance per Genus per Sample for those unique to semen,
-semen_unique_sample_abund <- ps.melt.genus |>
-  filter(sampletype == "semen", Best_Taxonomy %in% genus_unique_semen) |>
+# Recalculate abundance, but this time per sample, in order to capture rare taxa for comparison
+# Calculate mean abundance per Genus per Sample for those unique to main_group,
+unique_sample_abund <- ps.melt.genus |>
+  filter(.data[[met_var]] %in% main_group, Best_Taxonomy %in% genus_unique_main) |>
   group_by(Sample, Best_Taxonomy) |>
   summarise(abund = sum(Abundance), .groups = "drop")
 # 2. Wide format for heatmap
-abund_matrix <- semen_unique_sample_abund |>
+abund_matrix <- unique_sample_abund |>
   tidyr::pivot_wider(names_from = Best_Taxonomy, values_from = abund, values_fill = 0) |>
   column_to_rownames("Sample")
 # Ensure rownames of annotation match rownames of your abundance matrix
-annotation_row <- Metadata_semen |>
+annotation_row <- Metadata |>
   filter(sampleid %in% rownames(abund_matrix)) |>
-  column_to_rownames("sampleid") |>
-  select(Site, Line, depth_binned)  # or whatever columns you want to annotate
+  column_to_rownames("sampleid")
+# Ensure 'sampleid' matches rownames(final_physeq)
 
 log_abund_matrix <- log10(t(as.matrix(abund_matrix)) + 1e-5)  # Add small value to avoid log(0)
-# Fix legend scaling
-breaks <- seq(-5, -1, by = 1)
-labels <- c("1e-5", "1e-4", "1e-3", "1e-2", "1e-1")
-annotation_row$depth_binned <- factor(annotation_row$depth_binned,
-                                      levels = c("(2e+03,5e+03]", "(5e+03,1e+04]", "(1e+04,6e+04]"),
-                                      labels = c("Low", "Med", "High"))
-colnames(annotation_row)[colnames(annotation_row) == "depth_binned"] <- "Read Depth"
 pheat <- pheatmap(
   log_abund_matrix,
   cluster_rows = TRUE,
   cluster_cols = TRUE,
   annotation_col = annotation_row,
-  colour = viridis(100),
+  color = viridis(100),
   fontsize_row = 6,
   angle_col = 45,
-  cutree_cols = 6,
-  annotation_colors = list(
-    Site = c("Boston" = "steelblue", "Willingham" = "firebrick"),
-    Line = c("L03_LW" = "gold", "L04_LR" = "purple", "L19_WD" = "green", "327_Hamp" = "orange")
-  ),
-  legend_breaks = breaks,
-  legend_labels = labels,
-  main = "Log10 Abundance of Unique-to-Semen Genera by Sample"
+  main = "Log10 Abundance of Genera unique to main sample-type by Sample"
 )
-ggsave("heatmap_unique_semen.png", plot = pheat, width = 10, height = 15, dpi = 300)
-ggsave("heatmap_unique_semen.pdf", plot = pheat, width = 10, height = 15)
-# Issue with this plot is that genera are all extremely low abundance.
-# hence log10 transformation.
+
+# The issue with my data was that the unique genera were all extremely low abundance 
+# As this is likely to be true of any low-microbial biomass sample, I have included a log10 transformation.
 # These data may highlight v low biomass signal. Or it could reveal
 # sequencing artefacts. Or both - which, lets face it, is extremely likely.
 
-# Let's try the same plot but at higher taxonomic levels, to see if there are any patterns or
-# particular groups we can see.
-
-# Use the ps.melt.genus object, but create a new best taxonomy at higher level label to plot with.
-# Create a best taxonomy label to include and annotate those ASVs annotated at 
-# less informative levels
-ps.melt.genus$Best_Family_Taxonomy <- ifelse(
-    !is.na(ps.melt.genus$Family) & ps.melt.genus$Family != "",
-    paste0(ps.melt.genus$Family),
-    ifelse(
-      !is.na(ps.melt.genus$Order) & ps.melt.genus$Order != "",
-      paste0("Order: ", ps.melt.genus$Order),
-      ifelse(
-        !is.na(ps.melt.genus$Class) & ps.melt.genus$Class != "",
-        paste0("Class: ", ps.melt.genus$Class),
-        "Unclassified"
-      )
-    )
-  )
-ps.melt.genus$Best_Family_Taxonomy <- as.character(ps.melt.genus$Best_Family_Taxonomy)
-# 1. Calculate mean abundance per Genus per Sample for those unique to semen,
-semen_unique_sample_abund_family <- ps.melt.genus |>
-  filter(sampletype == "semen", Best_Taxonomy %in% genus_unique_semen) |>
-  group_by(Sample, Best_Family_Taxonomy) |>
-  summarise(abund = sum(Abundance), .groups = "drop")
-# 2. Wide format for heatmap
-abund_matrix_family <- semen_unique_sample_abund_family |>
-  tidyr::pivot_wider(names_from = Best_Family_Taxonomy, values_from = abund, values_fill = 0) |>
-  column_to_rownames("Sample")
-
-log_abund_matrix_family <- log10(t(as.matrix(abund_matrix_family)) + 1e-5)  # Add small value to avoid log(0)
-
-fampheat <- pheatmap(
-  log_abund_matrix_family,
-  cluster_rows = TRUE,
-  cluster_cols = TRUE,
-  annotation_col = annotation_row,
-  colour = viridis(100),
-  fontsize_row = 7,
-  fontsize_col = 5,
-  angle_col = 45,
-  cutree_cols = 4,
-  annotation_colors = list(
-    Site = c("Boston" = "steelblue", "Willingham" = "firebrick"),
-    Line = c("L03_LW" = "gold", "L04_LR" = "purple", "L19_WD" = "green", "327_Hamp" = "orange")
-  ),
-  legend_breaks = breaks,
-  legend_labels = labels,
-  main = "Log10 Abundance of Unique-to-Semen Bacterial Families"
-)
-ggsave("family_unique_heat.pdf", plot = fampheat, width = 8, height = 10, units = "in")
-# Let's try order, just in case.
-# Create a best taxonomy label to include and annotate those ASVs annotated at 
-# less informative levels
-ps.melt.genus$Best_Order_Taxonomy <- ifelse(
-    !is.na(ps.melt.genus$Order) & ps.melt.genus$Order != "",
-    paste0(ps.melt.genus$Order),
-    ifelse(
-      !is.na(ps.melt.genus$Class) & ps.melt.genus$Class != "",
-      paste0("Class: ", ps.melt.genus$Class),
-      "Unclassified"
-    )
-  )
-ps.melt.genus$Best_Order_Taxonomy <- as.character(ps.melt.genus$Best_Order_Taxonomy)
-# 1. Calculate mean abundance per Genus per Sample for those unique to semen,
-semen_unique_sample_abund_order <- ps.melt.genus |>
-  filter(sampletype == "semen", Best_Taxonomy %in% genus_unique_semen) |>
-  group_by(Sample, Best_Order_Taxonomy) |>
-  summarise(abund = sum(Abundance), .groups = "drop")
-# 2. Wide format for heatmap
-abund_matrix_order <- semen_unique_sample_abund_order |>
-  tidyr::pivot_wider(names_from = Best_Order_Taxonomy, values_from = abund, values_fill = 0) |>
-  column_to_rownames("Sample")
-
-log_abund_matrix_order <- log10(t(as.matrix(abund_matrix_order)) + 1e-5)  # Add small value to avoid log(0)
-
-pheat <- pheatmap(
-  log_abund_matrix_order,
-  cluster_rows = TRUE,
-  cluster_cols = TRUE,
-  annotation_col = annotation_row,
-  colour = viridis(100),
-  fontsize_row = 7,
-  fontsize_col = 6,
-  angle_col = 45,
-  cutree_cols = 4,
-  annotation_colors = list(
-    Site = c("Boston" = "steelblue", "Willingham" = "firebrick"),
-    Line = c("L03_LW" = "gold", "L04_LR" = "purple", "L19_WD" = "green", "327_Hamp" = "orange")
-  ),
-  legend_breaks = breaks,
-  legend_labels = labels,
-  main = "Log10 Abundance of Unique-to-Semen Microbial Orders"
-)
-# Again, very similar pattern observed.
-ggsave("Orders_unique_heatmap.pdf", plot = pheat, width = 8, height = 10, units = "in")
 # Let's look at the 4 most prevalent genera.
 # Step 1: Filter to 4 target genera
 target_genera <- c("Fastidiosipila", "Actinobaculum", "Macrococcus", "Providencia")
