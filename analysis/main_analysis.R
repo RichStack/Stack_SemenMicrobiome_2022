@@ -1482,7 +1482,7 @@ genus_summary |>
 # Begin this section by using a simple Venn plot.
 
 # Agglomerate at genus level
-phy_genus <- tax_glom(final_rel_physeq, taxrank = "Genus")
+phy_genus <- tax_glom(final_rel_physeq, taxrank = "Genus", NArm = FALSE)
 
 # Extract OTU table and convert to presence/absence
 otu_mat <- otu_table(phy_genus)
@@ -1597,150 +1597,40 @@ pheat <- pheatmap(
   main = "Log10 Abundance of Genera unique to main sample-type by Sample"
 )
 
-# The issue with my data was that the unique genera were all extremely low abundance 
+# The issue with my data was that the unique genera were all extremely low abundance. 
 # As this is likely to be true of any low-microbial biomass sample, I have included a log10 transformation.
 # These data may highlight v low biomass signal. Or it could reveal
 # sequencing artefacts. Or both - which, lets face it, is extremely likely.
 
-# Let's look at the 4 most prevalent genera.
-# Step 1: Filter to 4 target genera
-target_genera <- c("Fastidiosipila", "Actinobaculum", "Macrococcus", "Providencia")
-subset_abund <- ps.melt.genus |>
-  filter(sampletype == "semen", Genus %in% target_genera) |>
-  group_by(Sample, Genus) |>
-  summarise(abund = sum(Abundance), .groups = "drop") |>
-  tidyr::pivot_wider(names_from = Genus, values_from = abund, values_fill = 0) |>
-  column_to_rownames("Sample")
-# Step 2: Log transform (optional, to dampen scale differences)
-log_abund <- log10(subset_abund + 1e-5)
-# Step 3: Calculate distance and clustering
-sample_dist <- dist(log_abund, method = "euclidean")
-sample_clust <- hclust(sample_dist, method = "ward.D2")
-# Step 4: Dendrogram with metadata annotations (if wanted)
-# E.g. ggdendro or ggtree, or use heatmap with clustering
-meta_subset <- Metadata_semen |>
-  filter(sampleid %in% rownames(log_abund)) |>
-  column_to_rownames("sampleid") |>
-  select(Site, Line, depth_binned)
-meta_subset$depth_binned <- factor(meta_subset$depth_binned,
-                                   levels = c("(2e+03,5e+03]", "(5e+03,1e+04]", "(1e+04,6e+04]"),
-                                   labels = c("Low", "Med", "High"))
-colnames(meta_subset)[colnames(meta_subset) == "depth_binned"] <- "Read Depth"
-# Fix legend scaling
-breaks <- seq(-5, -1, by = 1)
-labels <- c("1e-5", "1e-4", "1e-3", "1e-2", "1e-1")
+##################################################################################
+# SECTION 9: Exploration of phylogeny by environmental niche
+##################################################################################
 
-abund_heat <- pheatmap(
-  t(log_abund),  # transpose to get taxa as rows
-  cluster_cols = TRUE,
-  cluster_rows = FALSE,
-  annotation_col = meta_subset,
-  annotation_colors = list(
-    Site = c("Boston" = "steelblue", "Willingham" = "firebrick"),
-    Line = c("L03_LW" = "gold", "L04_LR" = "purple", "L19_WD" = "green", "327_Hamp" = "orange")
-  ),
-  colour = viridis::viridis(100),
-  legend_breaks = breaks,
-  legend_labels = labels,
-  main = "Log10 Abundance of Key Genera (Unique-to-Semen)"
-)
-ggsave("key_abund_heat.pdf", plot = abund_heat, width = 8, height = 6, units = "in")
-# Actinobaculum shows a distinct pattern with Site and Line. Let's plot individually.
-# Extract Bacilli abundance
-Actinobaculum_abund <- as.data.frame(log_abund_matrix["Actinobaculum", ])
-Actinobaculum_abund$Sample <- rownames(Actinobaculum_abund)
-colnames(Actinobaculum_abund)[1] <- "log10_abund"
-
-# Add metadata
-Actinobaculum_abund <- left_join(Actinobaculum_abund, Metadata_semen, by = c("Sample" = "sampleid"))
-
-# Quick comparison by Site
-ggplot(Actinobaculum_abund, aes(x = Site, y = log10_abund, fill = Site)) +
-  geom_boxplot(width = 0.3, show.legend = F) +
-  geom_jitter(width = 0.15, show.legend = F) +
-  stat_compare_means(method = "wilcox.test", label = "p.format") +
-  scale_y_continuous(labels = scales::math_format(10^.x)) +
-  theme_classic(base_size = 10) +
-  scale_fill_igv() +
-  theme(text = element_text(size = 10),
-        plot.title = element_text(size = 12, face = "bold"),
-        plot.subtitle = element_text(size = 10),
-        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm")) +
-  labs(title = "Log10 abundance of Actinobaculum (unique-to-semen) by site",
-       subtitle = "Actinobaculum is more likely to be found in boar at Willingham",
-       y = "log10 Relative Abundance")
-ggsave("Actino_site.pdf", width = 8, height = 6, units = "in")
-# Wow
-kruskal.test(Actinobaculum_abund$log10_abund~Actinobaculum_abund$depth_binned)
-kruskal.test(Actinobaculum_abund$log10_abund~Actinobaculum_abund$Line)
-wilcox.test(Actinobaculum_abund$log10_abund~Actinobaculum_abund$Site)
-# Quick comparison by Site
-ggplot(Actinobaculum_abund, aes(x = Line, y = log10_abund, fill = Line)) +
-  geom_boxplot() +
-  geom_jitter(width = 0.2) +
-  scale_y_continuous(labels = scales::math_format(10^.x)) +
-  theme_classic() +
-  stat_compare_means(method = "kruskal.test", label = "p.format") +
-  scale_fill_igv() +
-  labs(title = "Log10 Abundance of Actinobaculum (unique-to-semen) by Line")
-# Not significant - not worth plotting.
-# curious about read depth Fastidiosipila
-# Extract Bacilli abundance
-Fastidiosipila_abund <- as.data.frame(log_abund_matrix["Fastidiosipila", ])
-Fastidiosipila_abund$Sample <- rownames(Fastidiosipila_abund)
-colnames(Fastidiosipila_abund)[1] <- "log10_abund"
-# Add metadata
-Fastidiosipila_abund <- left_join(Fastidiosipila_abund, Metadata_semen, by = c("Sample" = "sampleid"))
-
-# Quick comparison by Read depth
-ggplot(Fastidiosipila_abund, aes(x = depth_binned, y = log10_abund, fill = depth_binned)) +
-  geom_boxplot(width = 0.3, show.legend = F) +
-  geom_jitter(width = 0.15, show.legend = F) +
-  stat_compare_means(method = "kruskal.test", label = "p.format") +
-  scale_y_continuous(labels = scales::math_format(10^.x)) +
-  theme_classic(base_size = 10) +
-  scale_fill_igv() +
-  theme(text = element_text(size = 10),
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 10),
-        plot.margin = ggplot2::margin(1, 1, 1, 1, "cm")) +
-  labs(title = "Log10 Abundance of Fastidiosipila (unique-to-semen) by Read Depth",
-       y = "log10 Relative Abundance")
-# Confusing as absent from med depth group - but some presence in low depth group
-kruskal.test(Fastidiosipila_abund$log10_abund~Fastidiosipila_abund$depth_binned)
-fastmodel <- lm(log10_abund~read_depth, data = Fastidiosipila_abund)
-summary(fastmodel)
-kruskal.test(Fastidiosipila_abund$log10_abund~Fastidiosipila_abund$Line)
-wilcox.test(Fastidiosipila_abund$log10_abund~Fastidiosipila_abund$Site)
-cor.test(Fastidiosipila_abund$log10_abund, Fastidiosipila_abund$read_depth, method = "spearman")
-
-# Create cladograms
+# Create cladograms - begin with additional packages
 library(ggtree)
 library(treeio)
 library(ape)
 library(phytools)
-library(ggsci)
+                   
 # Extract tree and taxonomy - the tree is already within the phyloseq object
-# Qiime trees tend to be in Newick format
-tree <- phy_tree(genus_glom)
-tax <- as.data.frame(tax_table(genus_glom))
+# Qiime2 trees tend to be in Newick format
+tree <- phy_tree(phy_genus)
+tax <- as.data.frame(tax_table(phy_genus))
 tax$label <- rownames(tax) #Ensure tip labels are a column called 'label'
 
 # Create a presence/absence matrix for each niche
-otu_mat <- otu_table(genus_glom)
-otu_mat[otu_mat > 0] <- 1
-otu_mat <- as.data.frame(t(otu_mat)) # Tranpose to taxa as rows
-otu_mat$sampletype <- sample_data(genus_glom)$sampletype
-# Summarize presence/absence by group
+# We use the otu_mat object created in the last section
+
+# Summarize presence/absence by niche (or the variable you've defined in the config file)
 group_pa <- otu_mat |>
-  group_by(sampletype) |>
-  summarise(across(where(is.numeric), max)) |>
-  column_to_rownames("sampletype") |>
+  group_by(.data[[met_var]]) |>
+  summarise(across(where(is.numeric), max), .groups = "drop") |>
+  column_to_rownames(met_var) |>
   t() |>
   as.data.frame()
-
+  
 group_pa$label <- rownames(group_pa)
-
+                   
 # Merge presence/absence with taxonomy
 merged_df <- merge(group_pa, tax[,
                                  c("label",
@@ -1778,46 +1668,36 @@ merged_df$Best_Taxonomy <- apply(
   merged_df[, c("Genus", "Family", "Order", "Class", "Phylum")],
   1, get_best_label
 )
-# Assign niche categories
-merged_df[, c("semen", "gloveswab", "extender", "boarswab")][
-  is.na(merged_df[, c("semen", "gloveswab", "extender", "boarswab")])
-] <- 0
-# Combine niche presence into one variable
-merged_df$niche <- apply(
-  merged_df[, c("semen", "gloveswab", "extender", "boarswab")], 1,
-  function(x) {
-    present <- names(which(x == 1))
-    if (length(present) == 0) {
-      return("Absent")
-    } else {
-      return(paste(present, collapse = "_"))
-    }
-  }
-)
-# Try plotting semen only.
-# Filter to only taxa unique to semen
-semen_only_df <- merged_df[merged_df$niche == "semen", ]
+
+
+# Now we explore phylogram in terms of genera unique to your main_group (as defined in config)
+genus_unique_main <- genus_pa |>
+  group_by(Best_Taxonomy) |>
+  summarise(
+    unique_main = all(.data[[met_var]] %in% main_group),
+    n_sampletypes = n_distinct(.data[[met_var]]),
+    .groups = "drop"
+  ) |>
+  filter(unique_main, n_sampletypes == 1) |>
+  pull(Best_Taxonomy)
+
+# Try plotting a phylogram for your main_group only.
+# Filter to only taxa unique to the main_group
+main_group_only_df <- merged_df[ merged_df[[main_group]] == 1, ]
 # Subset tree to just these tips
-semen_tree <- keep.tip(tree, semen_only_df$label)
+main_group_tree <- keep.tip(tree, main_group_only_df$label)
 # Generate best label (Genus > Family > Order > Class)
-semen_only_df$Best_Taxonomy <- apply(
-  semen_only_df[, c("Genus","Family","Order","Class","Phylum")],
+main_group_only_df$Best_Taxonomy <- apply(
+  main_group_only_df[, c("Genus","Family","Order","Class","Phylum")],
   1, get_best_label
 )
-# ─────────────────────────────────────────────
-# 2.  Create a 'highlight' flag for the two key genera
-# ─────────────────────────────────────────────
-key_genera <- c("Actinobaculum","Fastidiosipila")
-semen_only_df <- semen_only_df %>%
-  mutate(highlight = ifelse(Genus %in% key_genera, "key", "other"),
-         shape     = ifelse(highlight == "key", 24, 21))   # 24 = filled triangle, 21 = circle
+# Create a 'highlight' flag for the two key genera
 # Shorten long taxonomic names
-semen_only_df$Best_Taxonomy <- sub("^Family: ", "", semen_only_df$Best_Taxonomy)
-# ─────────────────────────────────────────────
-# 3.  Plot: colour by Phylum, red outline for key genera
-# ─────────────────────────────────────────────
+main_group_only_df$Best_Taxonomy <- sub("^Family: ", "", main_group_only_df$Best_Taxonomy)
+
+# Plot: colour by Phylum,
 # Build the tree object with tip positions
-p_base <- ggtree(semen_tree, layout = "rectangular") %<+% semen_only_df
+p_base <- ggtree(main_group_tree, layout = "rectangular") %<+% main_group_only_df
 
 # Extract the plotted data (has x, y, everything)
 tree_df <- p_base$data
@@ -1830,13 +1710,6 @@ p <- p_base +
                  guide = guide_legend(override.aes = list(shape = 21,
                                                           size  = 4,
                                                           colour = "black"))) +
-  geom_text_repel(
-    data = tree_df %>%
-      filter(label %in% semen_only_df$label[semen_only_df$Genus %in% key_genera]),
-    aes(x = x, y = y, label = Genus),
-    size = 3, nudge_x = 0.4, min.segment.length = 0,
-    inherit.aes = FALSE
-  ) +
   theme_tree2() +
   theme(axis.text = element_blank(),
         axis.ticks = element_blank(),
@@ -1845,10 +1718,8 @@ p <- p_base +
         legend.text  = element_text(size = 7),
         text = element_text(size = 10),
         plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 12),
         plot.margin = ggplot2::margin(1, 1, 1, 1, "cm")) +
-  labs(title = "Phylogram of taxa unique to semen",
-       subtitle = "The two most prevalent taxa in this group have been highlighted")
+  labs(title = "Phylogram of taxa unique to main group")
 # after you’ve finished all other layers …
 max_x <- max(tree_df$x)
 
@@ -1863,19 +1734,21 @@ p <- p +
   coord_cartesian(xlim = c(0, max_x), clip = "off") +
   theme(plot.margin = margin(1, 1, 5, 1, "pt"))  # extra bottom space for the bar
 p
-!is.null(semen_tree$edge.length) && all(!is.na(semen_tree$edge.length))
-ggsave(plot = p, "semen_unique_clade.pdf", width = 9, height = 7)
-ggsave(plot = p, "semen_unique_clade.png", width = 9, height = 7, dpi = 300)
-# ─────────────────────────────────────────
-# 1.  Subset metadata & tree
-# ─────────────────────────────────────────
-shared_df  <- merged_df %>% filter(niche != "semen")           # any tip found in ≥2 sample types
+!is.null(main_tree$edge.length) && all(!is.na(main_tree$edge.length))
+
+# For comparison, it is important to visualise another phylogram of all the shared taxa.
+# Hopefully this will allow you to interrogate the presence/absence of clades in your main group - which should
+# open up additional avenues of exploration, and can be combined with your exploration of relative abundance of
+# taxa across niches etc.
+                   
+# Subset metadata & tree
+
+shared_df  <- merged_df %>% filter(rowSums(across(where(is.numeric))) > 1)           # any tip found in ≥2 sample types
 shared_tree <- ape::keep.tip(tree, shared_df$label)
-absent_order <- setdiff(unique(shared_df$Order), unique(semen_only_df$Order))
+absent_order <- setdiff(unique(shared_df$Order), unique(main_group_only_df$Order))
 print(absent_order)
-# ─────────────────────────────────────────
-# 1.  For each absent phylum, collect tip labels and MRCA node
-# ─────────────────────────────────────────
+
+# For each absent phylum, collect tip labels and MRCA node
 hilite_nodes <- list()
 
 for (order in absent_order) {
@@ -1886,52 +1759,15 @@ for (order in absent_order) {
   }
 }
 
-# ─────────────────────────────────────────
-# 2.  Flag Top-20 genera categories
-#     (edit these vectors as you like)
-# ─────────────────────────────────────────
-likely_semen <- c("Dolosicoccus", "Lactobacillus", "Family: Carnobacteriaceae","Family: Aerococcaceae")
-likely_env   <- c("Aliicoccus", "Streptococcus", "Staphylococcus", "Escherichia-Shigella", "Clostridium_sensu_stricto_1", "Acinetobacter")  # example
-unknown <- c("Peptoniphilus",
-             "Terrisporobacter", 
-             "Corynebacterium", 
-             "Psychrobacter",
-             "W5053",
-             "HT002",
-             "Turicibacter")
-shared_df <- shared_df |>
-  mutate(origin = case_when(
-    Best_Taxonomy %in% likely_semen ~ "Semen-origin",
-    Best_Taxonomy %in% likely_env   ~ "Environmental",
-    Best_Taxonomy %in% unknown ~ "Ambiguous",
-    TRUE                             ~ "Unknown"),
-    shape  = case_when(
-      origin == "Semen-origin" ~ 24,   # filled triangle
-      origin == "Environmental" ~ 22,  # filled square
-      origin == "Ambiguous" ~ 21,
-      TRUE                      ~ 20))  # circle
-# 1. Make `origin` a factor in the order you want
-shared_df$origin <- factor(shared_df$origin,
-                           levels = c("Semen-origin", "Environmental", "Ambiguous", "Unknown"))
-
-# 2. Shape palette keyed by the same origin names
-shape_pal <- c("Semen-origin"  = 24,  # filled triangle
-               "Environmental" = 22,  # filled square
-               "Ambiguous"     = 21,  # filled circle
-               "Unknown"       = 20)  # small dot
-# 3. Build the tree
+# Build the tree
 p_base <- ggtree(shared_tree, layout = "rectangular") %<+% shared_df
 tree_df <- p_base$data
 
-# 4. Plot
+# Plot
 p_shared <- p_base +
-  geom_tippoint(aes(fill = Phylum, shape = origin),   # map shape to *origin*, not to numeric
+  geom_tippoint(aes(fill = Phylum),
                 size = 2.5, colour = "black", stroke = 0.35) +
-  scale_shape_manual(name = "Origin", values = shape_pal) +
-  scale_fill_igv(name = "Phylum",
-                 guide = guide_legend(override.aes = list(shape = 21,
-                                                          size  = 4,
-                                                          colour = "black"))) +
+  scale_fill_igv(name = "Phylum") +
   geom_tiplab(data   = tree_df %>% filter(origin != "Unknown"),
               aes(label = gsub("^Family: ", "", Best_Taxonomy)),
               align   = TRUE,
@@ -1984,18 +1820,84 @@ p_shared <- p_shared +
 
 p_shared 
 # right margin extra
-ggsave("shared_taxa_cladogram_labeled.png", p_shared,
-       width = 11, height = 9, dpi = 300)
-ggsave("shared_taxa_cladogram_labeled.pdf", p_shared,
-       width = 11, height = 9)
 
-# Create a phyloseq object with the 4 comparative samples plus mocks
-ps_amplicon <- subset_samples(ps_filtered,
-                               (sample_names(ps_filtered) %in% c("42A0118K",
-                                                                 "5A0295K",
-                                                                 "2A0297K",
-                                                                 "41A0888K",
-                                                                 "39A9968H",
-                                                                 "50ADNAMCII")))
-# Save objects that we'll need for the shotgun and RNA scripts.
-saveRDS(ps_amplicon, "shotgun/ps_amplicon.rds")
+# Finally you can interrogate a phylogram of anything not found in your main_group samples:
+env_only_df <- merged_df |>
+  filter(.data[[main_group]] == 0,
+         rowSums(across(where(is.numeric))) == 1)
+env_only_tree <- ape::keep.tip(tree, env_only_df$label)
+absent_order_2 <- setdiff(unique(env_only_df$Order), unique(main_group_only_df$Order))
+print(absent_order_2)
+
+# For each absent phylum, collect tip labels and MRCA node
+hilite_nodes <- list()
+
+for (order in absent_order_2) {
+  order_tips <- env_only_df$label[env_only_df$Order == order]
+  if (length(order_tips) > 1) {                       # need ≥2 tips for MRCA
+    node  <- MRCA(env_only_tree, order_tips)
+    hilite_nodes[[order]] <- node
+  }
+}
+
+# Build the tree
+p_base <- ggtree(env_only_tree, layout = "rectangular") %<+% env_only_df
+tree_df <- p_base$data
+
+# Plot
+p_env_only <- p_base +
+  geom_tippoint(aes(fill = Phylum),
+                size = 2.5, colour = "black", stroke = 0.35) +
+  scale_fill_igv(name = "Phylum") +
+  geom_tiplab(data   = tree_df %>% filter(origin != "Unknown"),
+              aes(label = gsub("^Family: ", "", Best_Taxonomy)),
+              align   = TRUE,
+              linetype = "dotted",  # make leader lines subtle
+              linesize = 0.25,
+              offset = 0.2,
+              size     = 2.8,
+              hjust    = 0) +       # label text left-justified
+  theme_tree2() +
+  theme(axis.text  = element_blank(),
+        axis.ticks = element_blank(),
+        legend.position = "bottom",
+        legend.title = element_text(size = 8),
+        legend.text  = element_text(size = 7),
+        theme(plot.margin = margin(1, 1, 3, 1, "pt")),
+        title = element_text(size = 14, face = "bold"))
+for (order in names(hilite_nodes)) {
+  p_env_only <- p_env_only +
+    geom_hilight(node = hilite_nodes[[order]],
+                 fill = "grey50", alpha = 0.10, extend = 0.3)
+}
+
+for (order in names(hilite_nodes)) {
+    p_env_only <- p_env_only +
+      geom_cladelabel(
+        node        = hilite_nodes[[order]],
+        label       = order,
+        align       = TRUE,
+        offset      = 0.01,      # ← shorter bar
+        offset.text = 0.025,      # ← text nudged same amount
+        color       = "grey50",
+        barsize     = 0.2,
+        fontsize    = 3
+      )
+}
+max_x <- max(tree_df$x)
+
+p_env_only <- p_env_only +
+  geom_treescale(
+    x      = 0,          # x-coordinate where the bar starts
+    y      = -1.5,         # y just below the lowest tip (negative puts it under the tree)
+    width  = 0.1,        # branch-length represented by the bar (0.1 = 0.1 substitutions/site)
+    offset = 0,          # extra gap between bar and tree (0 = flush)
+    fontsize = 3
+  ) +
+  coord_cartesian(
+    xlim  = c(0, max_x + 0.2),   # add generous space for text
+    clip  = "off") + # allow grobs outside panel area
+  labs(title = "Phylogram of shared taxa")
+
+p_env_only 
+# right margin extra
